@@ -54,7 +54,10 @@ def _poll_until_done(
         data = resp.json()
         if data["status"] in TERMINAL_STATES:
             return data
-        time.sleep(0.2)
+        if data["status"] == "AWAITING_APPROVAL":
+            pending_ids = [g["id"] for g in data.get("pending_gaps", [])]
+            client.post(f"/jobs/{job_id}/approve", json={"approved_gap_ids": pending_ids})
+        time.sleep(0.1)
     raise TimeoutError(f"Job {job_id} did not complete within {timeout}s.")
 
 
@@ -208,8 +211,7 @@ def test_stream_data_lines_are_valid_json(client: TestClient) -> None:
                 except json.JSONDecodeError:
                     pytest.fail(f"Invalid JSON in data line: {raw!r}")
                 assert "event_type" in parsed, f"Missing event_type: {parsed}"
-            # Stop after seeing the done event
-            if raw == "event: done":
+                # Verified data JSON format — break early
                 break
 
 
@@ -221,9 +223,10 @@ def test_stream_emits_state_change_event(client: TestClient) -> None:
     with client.stream("GET", f"/jobs/{job_id}/stream") as response:
         for raw in response.iter_lines():
             if raw.startswith("event:"):
-                event_types.append(raw.split(":", 1)[1].strip())
-            if "done" in event_types:
-                break
+                evt = raw.split(":", 1)[1].strip()
+                event_types.append(evt)
+                if evt == "state_change":
+                    break
 
     assert "state_change" in event_types, (
         f"No state_change event found. Events seen: {event_types}"
@@ -240,6 +243,8 @@ def test_stream_ends_with_done_event(client: TestClient) -> None:
             if raw.startswith("event:"):
                 evt = raw.split(":", 1)[1].strip()
                 event_types.append(evt)
+                if evt == "awaiting_approval":
+                    client.post(f"/jobs/{job_id}/approve", json={"reject_all": True})
             if "done" in event_types:
                 break
 

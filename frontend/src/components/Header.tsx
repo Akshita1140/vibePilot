@@ -29,6 +29,7 @@ interface HeaderProps {
   hasPendingApproval?: boolean;
   theme: Theme;
   onToggleTheme: () => void;
+  onOpenIntegrationModal?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -45,6 +46,7 @@ export const Header: React.FC<HeaderProps> = ({
   hasPendingApproval = false,
   theme,
   onToggleTheme,
+  onOpenIntegrationModal,
 }) => {
   const [isPresetOpen, setIsPresetOpen] = useState(false);
 
@@ -205,17 +207,23 @@ export const Header: React.FC<HeaderProps> = ({
             <RotateCcw className="w-4 h-4" />
           </button>
 
-          {/* Connected / Demo Mode Indicator Badge */}
-          <div 
-            onClick={onToggleDemoMode}
-            className="cursor-pointer hidden xl:flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-100 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 text-xs font-mono hover:border-slate-400 dark:hover:border-slate-700 transition-colors"
-            title="Click to toggle between Demo Mode and Live Backend"
-          >
-            <span className={`w-2.5 h-2.5 rounded-full ${isDemoMode ? 'bg-amber-500 dark:bg-amber-400 animate-pulse' : 'bg-emerald-500 dark:bg-emerald-400'}`} />
-            <span className={isDemoMode ? 'text-amber-800 dark:text-amber-300 font-semibold' : 'text-emerald-700 dark:text-emerald-400 font-semibold'}>
-              {isDemoMode ? 'Demo Mode' : 'Connected'}
-            </span>
-          </div>
+          {/* Backend v1 Integration & Open Ends Inspector Button */}
+          {onOpenIntegrationModal && (
+            <button
+              type="button"
+              onClick={onOpenIntegrationModal}
+              className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-300 dark:bg-slate-900 dark:border-slate-800 dark:hover:border-slate-700 text-xs font-mono transition-all focus:outline-none focus:ring-2 focus:ring-cyan-500"
+              title="Click to view Backend v1 integration details and active open ends"
+            >
+              <span className={`w-2.5 h-2.5 rounded-full ${isDemoMode ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500'}`} />
+              <span className="font-bold text-slate-800 dark:text-slate-200 hidden md:inline">
+                {isDemoMode ? 'Demo Telemetry' : 'Backend v1 Active'}
+              </span>
+              <span className="px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-950 text-amber-900 dark:text-amber-300 text-[10px] font-bold border border-amber-300 dark:border-amber-700">
+                4 Open Ends
+              </span>
+            </button>
+          )}
         </div>
       </div>
     </header>

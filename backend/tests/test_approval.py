@@ -227,10 +227,19 @@ def test_receipt_has_required_fields(client: TestClient) -> None:
         assert field in data, f"Missing field: {field}"
 
 
+def _complete_job(client: TestClient, url: str = VALID_URL) -> str:
+    job_id = _queue(client, url)
+    data = _poll(client, job_id, {"AWAITING_APPROVAL"} | TERMINAL)
+    if data["status"] == "AWAITING_APPROVAL":
+        pending_ids = [g["id"] for g in data.get("pending_gaps", [])]
+        client.post(f"/jobs/{job_id}/approve", json={"approved_gap_ids": pending_ids})
+        _poll(client, job_id, TERMINAL)
+    return job_id
+
+
 def test_receipt_gap_receipts_have_required_fields(client: TestClient) -> None:
     """Each gap_receipt must have id, title, severity, decision."""
-    job_id = _queue(client)
-    _poll(client, job_id, TERMINAL)
+    job_id = _complete_job(client)
     data = client.get(f"/jobs/{job_id}/receipt").json()
     for gap in data.get("gap_receipts", []):
         for field in ("id", "title", "severity", "decision"):
@@ -240,8 +249,7 @@ def test_receipt_gap_receipts_have_required_fields(client: TestClient) -> None:
 def test_receipt_gap_decisions_are_valid(client: TestClient) -> None:
     """Every gap decision must be one of the known values."""
     valid_decisions = {"approved", "rejected", "skipped", "not_applicable"}
-    job_id = _queue(client)
-    _poll(client, job_id, TERMINAL)
+    job_id = _complete_job(client)
     data = client.get(f"/jobs/{job_id}/receipt").json()
     for gap in data.get("gap_receipts", []):
         assert gap["decision"] in valid_decisions, (
@@ -251,8 +259,7 @@ def test_receipt_gap_decisions_are_valid(client: TestClient) -> None:
 
 def test_receipt_has_raw_app_map(client: TestClient) -> None:
     """Receipt must include the raw app_map with a summary."""
-    job_id = _queue(client)
-    _poll(client, job_id, TERMINAL)
+    job_id = _complete_job(client)
     data = client.get(f"/jobs/{job_id}/receipt").json()
     raw = data.get("raw_app_map", {})
     assert "summary" in raw, "raw_app_map must contain summary."

@@ -11,9 +11,12 @@ import {
   Globe,
   Sun,
   Moon,
-  Info
+  Info,
+  AlertTriangle,
+  Server
 } from 'lucide-react';
 import { Theme } from '@/lib/types';
+import { BACKEND_V1_OPEN_ENDS } from '@/lib/backend-adapter';
 
 interface SettingsPanelProps {
   isDemoMode: boolean;
@@ -266,7 +269,48 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
           </div>
         </div>
 
-        {/* Section 4: Local Storage & Cache Management */}
+        {/* Section 4: Backend v1 Open Ends & Gaps Audit */}
+        <div className="py-6 border-b border-slate-200 dark:border-slate-800 space-y-4">
+          <div>
+            <div className="flex items-center gap-2">
+              <Server className="w-5 h-5 text-indigo-600 dark:text-cyan-400" />
+              <h3 className="text-base font-bold text-slate-900 dark:text-white">Backend v1 Open Ends & Gaps Audit</h3>
+            </div>
+            <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 mt-1">
+              Active architectural constraints identified in Backend Version 1 and their corresponding workarounds.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+            {BACKEND_V1_OPEN_ENDS.map((openEnd) => (
+              <div 
+                key={openEnd.id}
+                className="p-4 rounded-xl border bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 space-y-2"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-bold text-xs sm:text-sm text-slate-900 dark:text-white truncate">
+                    {openEnd.title}
+                  </span>
+                  <span className={`px-2 py-0.5 rounded text-[10px] font-mono uppercase font-bold shrink-0 border ${
+                    openEnd.severity === 'warning'
+                      ? 'bg-amber-100 text-amber-900 border-amber-300 dark:bg-amber-950 dark:text-amber-300 dark:border-amber-700'
+                      : 'bg-indigo-100 text-indigo-900 border-indigo-300 dark:bg-indigo-950 dark:text-indigo-300 dark:border-indigo-700'
+                  }`}>
+                    {openEnd.component}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+                  {openEnd.impact}
+                </p>
+                <div className="text-[11px] text-emerald-700 dark:text-emerald-400 font-mono bg-emerald-50 dark:bg-emerald-950/40 p-2 rounded-lg border border-emerald-200 dark:border-emerald-800/60">
+                  <span className="font-bold">Workaround: </span>{openEnd.workaround}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Section 5: Local Storage & Cache Management */}
         <div className="pt-6 space-y-4">
           <div>
             <h3 className="text-base font-bold text-slate-900 dark:text-white">Cache & Reset Controls</h3>

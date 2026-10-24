@@ -26,12 +26,14 @@ import { VerificationResults } from '@/components/VerificationResults';
 import { SetupReceipt } from '@/components/SetupReceipt';
 import { ReceiptsHistory } from '@/components/ReceiptsHistory';
 import { SettingsPanel } from '@/components/SettingsPanel';
+import { IntegrationAlertModal } from '@/components/IntegrationAlertModal';
 
 export default function Home() {
   const [selectedPreset, setSelectedPreset] = useState<DemoPreset>(DEMO_PRESETS[0]);
   const [activeView, setActiveView] = useState<AppView>('overview');
   const [currentWorkflowStage, setCurrentWorkflowStage] = useState<WorkflowStage>('understand');
-  const [isDemoMode, setIsDemoMode] = useState<boolean>(true);
+  const [isDemoMode, setIsDemoMode] = useState<boolean>(false);
+  const [isIntegrationModalOpen, setIsIntegrationModalOpen] = useState<boolean>(false);
   const [isOpenMobile, setIsOpenMobile] = useState<boolean>(false);
 
   // Theme Management (Dark / Light Mode)
@@ -216,7 +218,10 @@ export default function Home() {
     setIsAnalyzing(false);
 
     if (res.data) {
-      setAnalysis(res.data);
+      setAnalysis(res.data.analysis);
+      if (res.data.setupRun) {
+        setSetupRun(res.data.setupRun);
+      }
       setCompletedStages((prev) => ({
         ...prev,
         understand: true,
@@ -433,6 +438,7 @@ export default function Home() {
           hasPendingApproval={pendingApproval}
           theme={theme}
           onToggleTheme={handleToggleTheme}
+          onOpenIntegrationModal={() => setIsIntegrationModalOpen(true)}
         />
 
         {/* Dynamic Workspace View */}
@@ -614,6 +620,14 @@ export default function Home() {
         onAuthorize={handleAuthorizeAction}
         onReject={handleRejectAction}
         isSubmitting={isAuthorizing}
+      />
+
+      {/* Backend v1 Integration & Open Ends Inspector Modal */}
+      <IntegrationAlertModal
+        isOpen={isIntegrationModalOpen}
+        onClose={() => setIsIntegrationModalOpen(false)}
+        isDemoMode={isDemoMode}
+        onToggleDemoMode={handleToggleDemoMode}
       />
     </div>
   );
