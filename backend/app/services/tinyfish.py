@@ -41,12 +41,14 @@ import logging
 from typing import Any, Optional
 
 import httpx
+import asyncio
+from datetime import date
 
 from app.config import settings
 
 logger = logging.getLogger(__name__)
 
-_TINYFISH_API = "https://api.tinyfish.io/v1/run"
+_TINYFISH_API = "https://agent.tinyfish.ai/v1/automation/run"
 _TIMEOUT = httpx.Timeout(connect=10.0, read=120.0, write=10.0, pool=5.0)
 
 
@@ -95,6 +97,49 @@ _VERIFY_SCHEMA: dict[str, Any] = {
 # ─────────────────────────────────────────────────────────────────────────────
 # Internal helper
 # ─────────────────────────────────────────────────────────────────────────────
+def _strip_descriptions(node):
+    """TinyFish rejects the JSON Schema 'description' keyword; remove it."""
+    if isinstance(node, dict):
+        return {
+            k: _strip_descriptions(v)
+            for k, v in node.items()
+            if not (k == "description" and isinstance(v, str))
+        }
+    if isinstance(node, list):
+        return [_strip_descriptions(i) for i in node]
+    return node
+
+_budget: dict = {"day": None, "runs": 0}
+_sem: asyncio.Semaphore | None = None
+
+
+def _get_sem() -> asyncio.Semaphore:
+    global _sem
+    if _sem is None:
+        _sem = asyncio.Semaphore(settings.tinyfish_concurrency)
+    return _sem
+
+
+def budget_allows() -> bool:
+    today = date.today().isoformat()
+    if _budget["day"] != today:
+        _budget["day"], _budget["runs"] = today, 0
+    return _budget["runs"] < settings.tinyfish_daily_run_cap
+
+
+def budget_record() -> None:
+    _budget["runs"] += 1
+
+
+def build_payload(url: str, task: str, output_schema: dict) -> dict:
+    payload = {
+        "url": url,
+        "goal": task,
+        "output_schema": _strip_descriptions(output_schema),
+    }
+    if settings.tinyfish_max_steps > 0:
+        payload["agent_config"] = {"max_steps": settings.tinyfish_max_steps}
+    return payload
 
 async def _call_tinyfish(
     task: str,
@@ -113,19 +158,22 @@ async def _call_tinyfish(
         return None
 
     payload = {
-        "task": task,
+        "goal": task,
         "url": url,
-        "output_schema": output_schema,
+        "output_schema": _strip_descriptions(output_schema),
         "timeout": timeout_seconds,
     }
     headers = {
-        "Authorization": f"Bearer {settings.tinyfish_api_key}",
+        "X-API-Key": settings.tinyfish_api_key,
         "Content-Type": "application/json",
     }
 
     try:
         async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
             logger.info("TinyFish call | url=%s | task_preview=%.80s", url, task)
+            if not budget_allows():
+                logger.warning("TinyFish daily run cap reached (%s); skipping call", settings.tinyfish_daily_run_cap)
+                return None
             response = await client.post(_TINYFISH_API, json=payload, headers=headers)
             response.raise_for_status()
             data = response.json()

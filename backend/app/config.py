@@ -8,6 +8,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field
 
 
+
 class Settings(BaseSettings):
     """
     All configuration for the VibePilot backend.
@@ -51,6 +52,13 @@ class Settings(BaseSettings):
         default="",
         description="TinyFish browser-agent API key (not used in demo mode)",
     )
+        # --- TinyFish cost safety ---
+    tinyfish_max_steps: int = 0            # 0 = don't send (max_steps is beta)
+    tinyfish_timeout_s: float = 120.0      # client-side timeout per call
+    tinyfish_daily_run_cap: int = 20       # max agent runs per day (in-memory)
+    tinyfish_max_diagnose_gaps: int = 1    # gaps diagnosed per job
+    tinyfish_concurrency: int = 2          # simultaneous agent runs
+
     database_url: str = Field(
         default="sqlite:///./vibepilot.db",
         description="SQLAlchemy database URL (SQLite default for dev)",

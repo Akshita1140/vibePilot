@@ -149,13 +149,26 @@ async def _run(job: Job) -> None:
             await _log(job, f"[DIAGNOSE SKIP] {gap.id} — TinyFish not configured or call failed.")
 
     # ── PHASE 3: AWAITING_APPROVAL ────────────────────────────────────────────
-    if autofix_gaps:
-        pending_dicts = [g.model_dump(mode="json") for g in autofix_gaps]
+    approvable_gaps = [g for g in autofix_gaps if g.id in diagnose_results]
+    unverified_ids = [g.id for g in autofix_gaps if g.id not in diagnose_results]
+    if unverified_ids:
+        await _log(job, f"Not offered for approval (agent could not observe them): {unverified_ids}")
+
+    if autofix_gaps and not approvable_gaps:
+        _store(job, analyze_response)
+        await _state(
+            job, JobState.GUIDED,
+            "Browser agent could not verify these issues. Manual steps shown, nothing was changed.",
+        )
+        await job.push_event(DoneEvent(message="GUIDED."))
+        return
+    if approvable_gaps:
+        pending_dicts = [g.model_dump(mode="json") for g in approvable_gaps]
         job.pending_approval_gaps = pending_dicts
 
         await _state(
             job, JobState.AWAITING_APPROVAL,
-            f"{len(autofix_gaps)} gap(s) ready for your approval.",
+            f"{len(approvable_gaps)} gap(s) ready for your approval.",
         )
         await job.push_event(AwaitingApprovalEvent(
             pending_gaps=pending_dicts,
@@ -187,7 +200,7 @@ async def _run(job: Job) -> None:
     if job.approved_gap_ids:
         await _state(job, JobState.EXECUTING, "Applying fixes via browser agent…")
 
-        approved_gaps = [g for g in autofix_gaps if g.id in job.approved_gap_ids]
+        approved_gaps = [g for g in approvable_gaps if g.id in job.approved_gap_ids]
         for gap in approved_gaps:
             await _log(job, f"[EXECUTE] {gap.title}")
             console_url = str(gap.model_dump(mode="json").get("dashboard_url") or job.app_url)
@@ -219,7 +232,7 @@ async def _run(job: Job) -> None:
     if job.approved_gap_ids:
         await _state(job, JobState.VERIFYING, "Verifying fixes…")
 
-        approved_gaps = [g for g in autofix_gaps if g.id in job.approved_gap_ids]
+        approved_gaps = [g for g in approvable_gaps if g.id in job.approved_gap_ids]
         for gap in approved_gaps:
             await _log(job, f"[VERIFY] {gap.title}")
             result = await verify_fix(
