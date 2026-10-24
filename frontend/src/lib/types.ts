@@ -1,4 +1,26 @@
+export type Theme = 'dark' | 'light';
+
 export type Stage = 'understand' | 'setup' | 'verify' | 'receipt';
+
+export type WorkflowStage = 
+  | 'understand' 
+  | 'diagnose' 
+  | 'plan' 
+  | 'approve' 
+  | 'act' 
+  | 'verify' 
+  | 'receipt';
+
+export type AppView = 
+  | 'overview' 
+  | 'app-map' 
+  | 'diagnose' 
+  | 'plan' 
+  | 'live-run' 
+  | 'verify' 
+  | 'receipt' 
+  | 'receipts-history' 
+  | 'settings';
 
 export type TaskStatus =
   | 'pending'
@@ -33,6 +55,39 @@ export interface RecommendedTaskItem {
   reason: string;
 }
 
+export interface Diagnosis {
+  issueTitle: string;
+  severity: 'critical' | 'high' | 'medium' | 'low';
+  affectedComponent: string;
+  errorText: string;
+  errorUrl?: string;
+  rootCause: string;
+  proposedRemedy: string;
+  confidenceScore: number;
+  evidenceSnippet?: string;
+}
+
+export interface ProposedChangeItem {
+  id: string;
+  targetProvider: string;
+  configurationKey: string;
+  currentValue?: string;
+  proposedValue: string;
+  rationale: string;
+  riskLevel: 'low' | 'medium' | 'high' | 'critical';
+  verificationMethod: string;
+  requiresManualStep: boolean;
+  manualStepGuide?: string;
+}
+
+export interface ChangePlan {
+  planId: string;
+  title: string;
+  summary: string;
+  items: ProposedChangeItem[];
+  estimatedDurationMs: number;
+}
+
 export interface AppAnalysis {
   analysisId: string;
   timestamp: string;
@@ -60,6 +115,8 @@ export interface AppAnalysis {
     secret: boolean;
   }>;
   recommendedChecklist: RecommendedTaskItem[];
+  diagnosis?: Diagnosis;
+  changePlan?: ChangePlan;
 }
 
 export interface TaskLogEntry {
@@ -78,6 +135,11 @@ export interface ApprovalRequest {
   commandPreview: string;
   diffSummary?: string;
   warningNote: string;
+  whyRequired?: string;
+  affectedProvider?: string;
+  expectedEffect?: string;
+  manualPrerequisite?: string;
+  afterApprovalEffect?: string;
 }
 
 export interface SetupTask {
@@ -119,6 +181,13 @@ export interface VerificationCheck {
   manualInstructions?: string[];
 }
 
+export interface ConfigChangeRecord {
+  key: string;
+  action: 'injected' | 'migrated' | 'verified' | 'pending_manual';
+  scope: string;
+  description: string;
+}
+
 export interface SetupReceipt {
   receiptId: string;
   runId: string;
@@ -139,6 +208,7 @@ export interface SetupReceipt {
     manualRequired: number;
   };
   checks: VerificationCheck[];
+  configChanges?: ConfigChangeRecord[];
   unresolvedActionItems: string[];
 }
 
@@ -152,4 +222,6 @@ export interface DemoPreset {
   analysisData: AppAnalysis;
   setupRunData: SetupRun;
   receiptData: SetupReceipt;
+  diagnosis?: Diagnosis;
+  changePlan?: ChangePlan;
 }

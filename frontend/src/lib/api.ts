@@ -48,11 +48,17 @@ export class VibePilotApi {
     }
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/analyze`, {
+      // Try /analyze, fallback to /api/analyze if needed
+      const endpoint = `${API_BASE_URL}/analyze`;
+      const response = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ appUrl, repoUrl }),
-      });
+      }).catch(() => fetch(`${API_BASE_URL}/api/analyze`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ appUrl, repoUrl }),
+      }));
 
       if (!response.ok) {
         throw new Error(`Backend responded with HTTP ${response.status}: ${response.statusText}`);
@@ -75,8 +81,40 @@ export class VibePilotApi {
   }
 
   /**
+   * Subscribe to live execution trace updates via Server-Sent Events (SSE)
+   * Contract: GET /jobs/:id/stream
+   */
+  public static streamJobUpdates(
+    jobId: string,
+    onMessage: (event: MessageEvent) => void,
+    onError?: (err: Event) => void
+  ): () => void {
+    if (this.isDemoMode || !API_BASE_URL || typeof window === 'undefined') {
+      // No-op cleanup in offline/demo mode
+      return () => {};
+    }
+
+    try {
+      const streamUrl = `${API_BASE_URL}/jobs/${encodeURIComponent(jobId)}/stream`;
+      const eventSource = new EventSource(streamUrl);
+
+      eventSource.onmessage = onMessage;
+      if (onError) {
+        eventSource.onerror = onError;
+      }
+
+      return () => {
+        eventSource.close();
+      };
+    } catch (err) {
+      console.warn('[VibePilot API] Failed to initialize SSE stream:', err);
+      return () => {};
+    }
+  }
+
+  /**
    * Fetch current setup run status and tasks
-   * Proposed contract: GET /api/runs/:runId
+   * Contract: GET /jobs/:id or GET /api/runs/:runId
    */
   public static async getSetupRun(runId: string): Promise<ApiResponse<SetupRun>> {
     if (this.isDemoMode || !API_BASE_URL) {
@@ -89,7 +127,8 @@ export class VibePilotApi {
     }
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/runs/${encodeURIComponent(runId)}`);
+      const response = await fetch(`${API_BASE_URL}/jobs/${encodeURIComponent(runId)}`)
+        .catch(() => fetch(`${API_BASE_URL}/api/runs/${encodeURIComponent(runId)}`));
       if (!response.ok) {
         throw new Error(`Failed to fetch run: HTTP ${response.status}`);
       }
@@ -107,7 +146,7 @@ export class VibePilotApi {
 
   /**
    * Submit an explicit approval for sensitive actions
-   * Proposed contract: POST /api/runs/:runId/tasks/:taskId/approval
+   * Contract: POST /jobs/:id/approve or POST /api/runs/:runId/tasks/:taskId/approval
    */
   public static async submitApproval(
     runId: string,
@@ -128,11 +167,16 @@ export class VibePilotApi {
     }
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/runs/${encodeURIComponent(runId)}/tasks/${encodeURIComponent(taskId)}/approval`, {
+      const response = await fetch(`${API_BASE_URL}/jobs/${encodeURIComponent(runId)}/approve`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ taskId, approved }),
+      }).catch(() => fetch(`${API_BASE_URL}/api/runs/${encodeURIComponent(runId)}/tasks/${encodeURIComponent(taskId)}/approval`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ approved }),
-      });
+      }));
+
       if (!response.ok) {
         throw new Error(`Approval submission failed: HTTP ${response.status}`);
       }
@@ -150,7 +194,7 @@ export class VibePilotApi {
 
   /**
    * Fetch the finalized Setup Receipt
-   * Proposed contract: GET /api/receipts/:receiptId
+   * Contract: GET /jobs/:id/receipt or GET /api/receipts/:receiptId
    */
   public static async getSetupReceipt(receiptId: string): Promise<ApiResponse<SetupReceipt>> {
     if (this.isDemoMode || !API_BASE_URL) {
@@ -163,7 +207,8 @@ export class VibePilotApi {
     }
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/receipts/${encodeURIComponent(receiptId)}`);
+      const response = await fetch(`${API_BASE_URL}/jobs/${encodeURIComponent(receiptId)}/receipt`)
+        .catch(() => fetch(`${API_BASE_URL}/api/receipts/${encodeURIComponent(receiptId)}`));
       if (!response.ok) {
         throw new Error(`Failed to load receipt: HTTP ${response.status}`);
       }

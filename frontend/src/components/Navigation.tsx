@@ -40,19 +40,19 @@ export const Navigation: React.FC<NavigationProps> = ({
   const navItems: Array<{ id: Stage; label: string; icon: React.ReactNode; subtitle: string }> = [
     {
       id: 'understand',
-      label: 'Understand',
-      subtitle: 'App Map & Routes',
+      label: 'App Map',
+      subtitle: 'Routes & Features',
       icon: <Compass className="w-4 h-4" />,
     },
     {
       id: 'setup',
-      label: 'Set Up',
-      subtitle: 'Tasks & Approvals',
+      label: 'Live Run',
+      subtitle: 'Execution & Approvals',
       icon: <Terminal className="w-4 h-4" />,
     },
     {
       id: 'verify',
-      label: 'Verify',
+      label: 'Verification',
       subtitle: 'Smoke Tests',
       icon: <ShieldCheck className="w-4 h-4" />,
     },
@@ -74,7 +74,7 @@ export const Navigation: React.FC<NavigationProps> = ({
             <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-500"></span>
           </span>
           <span className="text-slate-300 font-medium">VibePilot Core Engine:</span>
-          <span>AI Built Your App. VibePilot Gets It Ready to Ship.</span>
+          <span>AI writes the app. VibePilot gets it ready to ship.</span>
           <span className="hidden md:inline-block text-slate-600">•</span>
           <span className="hidden md:inline-block px-1.5 py-0.5 rounded bg-indigo-950/70 text-indigo-300 font-mono text-[10px] border border-indigo-800/50">
             IIIT Delhi 24h Hackathon
