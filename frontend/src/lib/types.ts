@@ -124,6 +124,8 @@ export interface TaskLogEntry {
   level: 'info' | 'warn' | 'error' | 'success';
   message: string;
   commandSnippet?: string;
+  type?: 'SYSTEM' | 'THOUGHT' | 'ACTION' | 'OBSERVE' | 'INFO';
+  detail?: string;
 }
 
 export interface ApprovalRequest {
