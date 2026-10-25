@@ -23,6 +23,110 @@ export interface BackendHealthStatus {
   error?: string;
 }
 
+export interface JobSubscriptionCallbacks {
+  onUpdate?: (job: BackendJobResult) => void;
+  onEvent?: (event: Record<string, unknown>) => void;
+  onError?: (error: Error) => void;
+  onTerminal?: (job: BackendJobResult) => void;
+}
+
+/**
+ * Safe receipt storage helper with defensive validation, schema checking, and quota error handling
+ */
+export class SafeReceiptStore {
+  private static readonly STORAGE_KEY = 'vibepilot_receipts_archive';
+
+  /**
+   * Safely load receipts from localStorage with schema validation
+   */
+  public static loadReceipts(): SetupReceipt[] {
+    if (typeof window === 'undefined') {
+      return DEMO_PRESETS.map((p) => JSON.parse(JSON.stringify(p.receiptData)));
+    }
+
+    try {
+      const stored = localStorage.getItem(this.STORAGE_KEY);
+      if (!stored) {
+        return DEMO_PRESETS.map((p) => JSON.parse(JSON.stringify(p.receiptData)));
+      }
+
+      const parsed = JSON.parse(stored);
+      if (!Array.isArray(parsed)) {
+        console.warn('[SafeReceiptStore] Malformed receipts in storage (not an array). Reverting to presets.');
+        return DEMO_PRESETS.map((p) => JSON.parse(JSON.stringify(p.receiptData)));
+      }
+
+      // Filter and validate each receipt object defensively
+      const validReceipts = parsed.filter((item): item is SetupReceipt => {
+        return Boolean(
+          item &&
+          typeof item === 'object' &&
+          typeof item.receiptId === 'string' &&
+          item.receiptId.trim() !== '' &&
+          item.targetApp &&
+          typeof item.targetApp === 'object' &&
+          typeof item.targetApp.name === 'string' &&
+          typeof item.status === 'string' &&
+          Array.isArray(item.checks)
+        );
+      });
+
+      if (validReceipts.length === 0) {
+        return DEMO_PRESETS.map((p) => JSON.parse(JSON.stringify(p.receiptData)));
+      }
+
+      return validReceipts;
+    } catch (err) {
+      console.warn('[SafeReceiptStore] Failed to read from localStorage:', err);
+      return DEMO_PRESETS.map((p) => JSON.parse(JSON.stringify(p.receiptData)));
+    }
+  }
+
+  /**
+   * Safely save or update a receipt in localStorage
+   */
+  public static saveReceipt(newReceipt: SetupReceipt): SetupReceipt[] {
+    if (!newReceipt || !newReceipt.receiptId) {
+      console.warn('[SafeReceiptStore] Cannot save invalid receipt missing receiptId.');
+      return this.loadReceipts();
+    }
+
+    const currentList = this.loadReceipts();
+    const existingIndex = currentList.findIndex((r) => r.receiptId === newReceipt.receiptId);
+    let updatedList: SetupReceipt[];
+
+    if (existingIndex >= 0) {
+      updatedList = [...currentList];
+      updatedList[existingIndex] = newReceipt;
+    } else {
+      updatedList = [newReceipt, ...currentList];
+    }
+
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem(this.STORAGE_KEY, JSON.stringify(updatedList));
+      } catch (err) {
+        console.warn('[SafeReceiptStore] Failed to persist receipt to localStorage (e.g. storage full):', err);
+      }
+    }
+
+    return updatedList;
+  }
+
+  /**
+   * Safely clear receipts archive
+   */
+  public static clearReceipts(): void {
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.removeItem(this.STORAGE_KEY);
+      } catch (err) {
+        console.warn('[SafeReceiptStore] Failed to clear receipts from localStorage:', err);
+      }
+    }
+  }
+}
+
 export class VibePilotApi {
   private static isDemoMode: boolean = false;
 
@@ -92,10 +196,15 @@ export class VibePilotApi {
     appUrl: string, 
     repoUrl?: string
   ): Promise<ApiResponse<{ analysis: AppAnalysis; setupRun?: SetupRun }>> {
-    // If user explicitly chose demo mode, resolve with preset
+    // Fast & responsive resolution for Demo Mode (Priority 2)
     if (this.isDemoMode) {
-      await new Promise((resolve) => setTimeout(resolve, 600));
-      const preset = DEMO_PRESETS.find((p) => p.appUrl.toLowerCase() === appUrl.trim().toLowerCase()) || DEMO_PRESETS[0];
+      await new Promise((resolve) => setTimeout(resolve, 180));
+      const cleanUrl = appUrl.trim().toLowerCase().replace(/\/$/, '');
+      const preset = DEMO_PRESETS.find((p) => {
+        const pUrl = p.appUrl.toLowerCase().replace(/\/$/, '');
+        return pUrl === cleanUrl || p.id.toLowerCase() === cleanUrl || cleanUrl.includes(p.id.toLowerCase());
+      }) || DEMO_PRESETS[0];
+
       const analysis: AppAnalysis = JSON.parse(JSON.stringify(preset.analysisData));
       analysis.targetApp.url = appUrl.trim();
       if (repoUrl?.trim()) {
@@ -172,8 +281,13 @@ export class VibePilotApi {
       const message = err instanceof Error ? err.message : 'Unknown network error';
       console.warn(`[VibePilot API] Live backend call failed (${message}). Falling back to Demo Mode.`);
 
-      // Graceful fallback to verified demo telemetry so presentation flows smoothly
-      const fallbackPreset = DEMO_PRESETS[0];
+      // Graceful fallback to verified demo telemetry matched to entered URL
+      const clean = appUrl.trim().toLowerCase().replace(/\/$/, '');
+      const fallbackPreset = DEMO_PRESETS.find((p) => {
+        const pUrl = p.appUrl.toLowerCase().replace(/\/$/, '');
+        return pUrl === clean || clean.includes(p.id.toLowerCase());
+      }) || DEMO_PRESETS[0];
+
       const fallbackAnalysis = JSON.parse(JSON.stringify(fallbackPreset.analysisData));
       fallbackAnalysis.targetApp.url = appUrl;
       if (repoUrl) fallbackAnalysis.targetApp.repoUrl = repoUrl;
@@ -190,35 +304,209 @@ export class VibePilotApi {
   }
 
   /**
+   * Helper to fetch current job result from backend
+   */
+  public static async fetchJobResult(jobId: string): Promise<BackendJobResult | null> {
+    try {
+      const baseUrl = this.getBaseUrl();
+      const response = await fetch(`${baseUrl}/jobs/${encodeURIComponent(jobId)}`);
+      if (response.ok) {
+        return await response.json();
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Resilient subscription to job updates (Priority 1):
+   * 1. Attempts Server-Sent Events (SSE) on GET /jobs/:id/stream
+   * 2. If SSE disconnects or errors, seamlessly falls back to polling GET /jobs/:id
+   * 3. Deduplicates updates and stops polling upon reaching terminal states (DONE, FAILED, GUIDED)
+   * 4. Cleans up timers, connections, and abort controllers when unsubscribed or unmounted
+   */
+  public static subscribeToJobUpdates(
+    jobId: string,
+    callbacks: JobSubscriptionCallbacks
+  ): () => void {
+    if (this.isDemoMode || typeof window === 'undefined') {
+      return () => {};
+    }
+
+    let isSubscribed = true;
+    let isTerminal = false;
+    let eventSource: EventSource | null = null;
+    let pollTimer: ReturnType<typeof setTimeout> | null = null;
+    let abortController: AbortController | null = null;
+    let lastKey = '';
+
+    const terminalStates = new Set(['DONE', 'FAILED', 'GUIDED']);
+
+    const cleanup = () => {
+      isSubscribed = false;
+      if (eventSource) {
+        eventSource.close();
+        eventSource = null;
+      }
+      if (pollTimer) {
+        clearTimeout(pollTimer);
+        pollTimer = null;
+      }
+      if (abortController) {
+        abortController.abort();
+        abortController = null;
+      }
+    };
+
+    const handleJobData = (data: BackendJobResult) => {
+      if (!isSubscribed || isTerminal) return;
+
+      const currentKey = `${data.status}:${data.updated_at || ''}:${data.pending_gaps?.length || 0}`;
+      if (currentKey !== lastKey) {
+        lastKey = currentKey;
+        try {
+          callbacks.onUpdate?.(data);
+        } catch (e) {
+          console.warn('[VibePilot API] onUpdate callback error:', e);
+        }
+      }
+
+      if (terminalStates.has(data.status)) {
+        isTerminal = true;
+        cleanup();
+        try {
+          callbacks.onTerminal?.(data);
+        } catch (e) {
+          console.warn('[VibePilot API] onTerminal callback error:', e);
+        }
+      }
+    };
+
+    const startPollingFallback = () => {
+      if (!isSubscribed || isTerminal) return;
+      if (pollTimer) clearTimeout(pollTimer);
+
+      const poll = async () => {
+        if (!isSubscribed || isTerminal) return;
+
+        try {
+          abortController = new AbortController();
+          const baseUrl = VibePilotApi.getBaseUrl();
+          const res = await fetch(`${baseUrl}/jobs/${encodeURIComponent(jobId)}`, {
+            signal: abortController.signal,
+          });
+
+          if (!res.ok) {
+            if (res.status === 404) {
+              const err = new Error(`Job '${jobId}' not found.`);
+              callbacks.onError?.(err);
+              cleanup();
+              return;
+            }
+          } else {
+            const data: BackendJobResult = await res.json();
+            handleJobData(data);
+          }
+        } catch (err: unknown) {
+          if (err instanceof Error && err.name === 'AbortError') {
+            return;
+          }
+          console.warn('[VibePilot API] Polling fallback request failed:', err);
+        }
+
+        if (isSubscribed && !isTerminal) {
+          pollTimer = setTimeout(poll, 1200);
+        }
+      };
+
+      // Poll immediately on fallback
+      poll();
+    };
+
+    try {
+      const baseUrl = this.getBaseUrl();
+      const streamUrl = `${baseUrl}/jobs/${encodeURIComponent(jobId)}/stream`;
+      eventSource = new EventSource(streamUrl);
+
+      const handleRawMessage = (rawData: string) => {
+        if (!isSubscribed || isTerminal) return;
+        try {
+          const parsed = JSON.parse(rawData);
+          callbacks.onEvent?.(parsed);
+          if (parsed && typeof parsed === 'object') {
+            if (
+              parsed.event_type === 'state_change' || 
+              parsed.event_type === 'done' || 
+              parsed.event_type === 'awaiting_approval' ||
+              parsed.event_type === 'result'
+            ) {
+              VibePilotApi.fetchJobResult(jobId).then((job) => {
+                if (job && isSubscribed) handleJobData(job);
+              }).catch(() => {});
+            }
+          }
+        } catch {
+          // Keep-alive comments or non-JSON message
+        }
+      };
+
+      eventSource.onmessage = (e) => handleRawMessage(e.data);
+
+      const namedEvents = ['state_change', 'done', 'awaiting_approval', 'result', 'log', 'page_fetched', 'llm_done'];
+      namedEvents.forEach((type) => {
+        eventSource?.addEventListener(type, ((e: MessageEvent) => {
+          handleRawMessage(e.data);
+        }) as EventListener);
+      });
+
+      eventSource.onerror = () => {
+        if (!isSubscribed || isTerminal) return;
+        console.warn('[VibePilot API] SSE stream disconnected or errored. Activating resilient polling fallback.');
+        if (eventSource) {
+          eventSource.close();
+          eventSource = null;
+        }
+        startPollingFallback();
+      };
+    } catch (err) {
+      console.warn('[VibePilot API] EventSource initialization failed, starting polling fallback:', err);
+      startPollingFallback();
+    }
+
+    return cleanup;
+  }
+
+  /**
    * Subscribe to live execution trace updates via Server-Sent Events (SSE)
-   * Contract: GET /jobs/:id/stream
+   * With automatic resilient fallback to polling if SSE drops.
+   * Contract: GET /jobs/:id/stream -> fallback to GET /jobs/:id
    */
   public static streamJobUpdates(
     jobId: string,
     onMessage: (event: MessageEvent) => void,
     onError?: (err: Event) => void
   ): () => void {
-    if (this.isDemoMode || typeof window === 'undefined') {
-      return () => {};
-    }
-
-    try {
-      const baseUrl = this.getBaseUrl();
-      const streamUrl = `${baseUrl}/jobs/${encodeURIComponent(jobId)}/stream`;
-      const eventSource = new EventSource(streamUrl);
-
-      eventSource.onmessage = onMessage;
-      if (onError) {
-        eventSource.onerror = onError;
-      }
-
-      return () => {
-        eventSource.close();
-      };
-    } catch (err) {
-      console.warn('[VibePilot API] Failed to initialize SSE stream:', err);
-      return () => {};
-    }
+    return this.subscribeToJobUpdates(jobId, {
+      onEvent: (data) => {
+        const synthetic = new MessageEvent('message', { data: JSON.stringify(data) });
+        onMessage(synthetic);
+      },
+      onUpdate: (jobResult) => {
+        const synthetic = new MessageEvent('message', {
+          data: JSON.stringify({
+            event_type: 'state_change',
+            state: jobResult.status,
+            job_id: jobResult.job_id,
+            job_result: jobResult,
+          }),
+        });
+        onMessage(synthetic);
+      },
+      onError: (err) => {
+        if (onError) onError(new CustomEvent('error', { detail: err }));
+      },
+    });
   }
 
   /**

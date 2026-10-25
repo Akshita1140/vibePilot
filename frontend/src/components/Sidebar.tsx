@@ -2,6 +2,7 @@
 
 import React, { useEffect } from 'react';
 import { AppView } from '@/lib/types';
+import { UserProfile } from './UserLoginModal';
 import { 
   LayoutDashboard, 
   Compass, 
@@ -12,9 +13,13 @@ import {
   Settings2, 
   X,
   Zap,
-  Activity,
-  ArrowRight
+  ArrowRight,
+  ShieldAlert,
+  User,
+  Radio,
+  ExternalLink
 } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
 
 interface SidebarProps {
   activeView: AppView;
@@ -25,6 +30,9 @@ interface SidebarProps {
   onCloseMobile: () => void;
   receiptsCount: number;
   pendingApproval: boolean;
+  currentUser?: UserProfile | null;
+  onOpenLoginModal?: () => void;
+  onNewAnalysis?: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -36,6 +44,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onCloseMobile,
   receiptsCount,
   pendingApproval,
+  currentUser,
+  onOpenLoginModal,
+  onNewAnalysis,
 }) => {
   // Close drawer on Escape key press
   useEffect(() => {
@@ -60,8 +71,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     };
   }, [isOpenMobile]);
 
-  // 5 Core navigation destinations per Priority 1 requirements
-  const primaryNavItems: Array<{
+  const navItems: Array<{
     id: AppView;
     label: string;
     description: string;
@@ -71,81 +81,84 @@ export const Sidebar: React.FC<SidebarProps> = ({
   }> = [
     {
       id: 'overview',
-      label: 'Overview',
+      label: 'Readiness Cockpit',
       description: 'Ship readiness dashboard & activity',
       icon: LayoutDashboard,
     },
     {
       id: 'app-map',
-      label: 'App Map',
-      description: 'Routes, features, integrations & secrets',
+      label: 'App Map & Architecture',
+      description: 'Routes, dependencies & secrets scan',
       icon: Compass,
     },
     {
+      id: 'diagnose',
+      label: 'Diagnose & Issues',
+      description: 'Root-cause analysis & confidence scores',
+      icon: Sparkles,
+    },
+    {
+      id: 'plan',
+      label: 'Change Plan',
+      description: 'Proposed diffs & migration recipes',
+      icon: ShieldAlert,
+    },
+    {
       id: 'live-run',
-      label: 'Live Run',
-      description: 'Execution timeline & approval gates',
+      label: 'Live Execution Run',
+      description: 'Terminal stream & 120s human gate',
       icon: Terminal,
       badge: pendingApproval ? 'Action Required' : undefined,
-      badgeColor: 'bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-950/80 dark:text-amber-300 dark:border-amber-500 animate-pulse font-semibold',
-    },
-    {
-      id: 'receipts-history',
-      label: 'Setup Receipts',
-      description: 'Audit history & certified manifests',
-      icon: FileCheck2,
-      badge: receiptsCount > 0 ? `${receiptsCount} Run${receiptsCount > 1 ? 's' : ''}` : undefined,
-      badgeColor: 'bg-indigo-100 text-indigo-800 border-indigo-200 dark:bg-slate-800 dark:text-cyan-300 dark:border-slate-700 font-mono font-medium',
-    },
-    {
-      id: 'settings',
-      label: 'Settings',
-      description: 'Theme, backend bridge & local cache',
-      icon: Settings2,
-    },
-  ];
-
-  // Secondary sub-destinations for quick access within the workflow
-  const subNavItems: Array<{
-    id: AppView;
-    label: string;
-    description: string;
-    icon: React.ComponentType<{ className?: string }>;
-  }> = [
-    {
-      id: 'diagnose',
-      label: 'Diagnose & Plan',
-      description: 'Issue root-cause & automated fix diff',
-      icon: Sparkles,
+      badgeColor: 'bg-amber-500/10 text-amber-500 border border-amber-500/30 animate-pulse font-semibold',
     },
     {
       id: 'verify',
       label: 'Synthetic Verification',
-      description: 'Route probes & latency tests',
+      description: 'Route probes, latency & OAuth checks',
       icon: ShieldCheck,
+    },
+    {
+      id: 'receipts-history',
+      label: 'Setup Receipts',
+      description: 'Audit history & certified receipts',
+      icon: FileCheck2,
+      badge: receiptsCount > 0 ? `${receiptsCount}` : undefined,
+      badgeColor: 'bg-violet-500/10 text-violet-600 dark:text-cyan-300 border border-violet-500/20 font-mono font-medium',
+    },
+    {
+      id: 'settings',
+      label: 'Settings & Telemetry',
+      description: 'Theme, backend bridge & diagnostics',
+      icon: Settings2,
     },
   ];
 
   return (
     <>
       {/* Backdrop overlay */}
-      {isOpenMobile && (
-        <div 
-          onClick={onCloseMobile}
-          className="fixed inset-0 bg-black/60 dark:bg-black/80 backdrop-blur-sm z-50 transition-opacity animate-in fade-in duration-200"
-          aria-hidden="true"
-        />
-      )}
+      <AnimatePresence>
+        {isOpenMobile && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            onClick={onCloseMobile}
+            className="fixed inset-0 bg-black/60 dark:bg-black/80 backdrop-blur-sm z-50 transition-opacity"
+            aria-hidden="true"
+          />
+        )}
+      </AnimatePresence>
 
-      {/* Navigation Drawer Panel */}
+      {/* Navigation Drawer */}
       <nav
-        aria-label="Main Navigation Drawer"
-        className={`fixed inset-y-0 left-0 w-80 sm:w-96 max-w-[90vw] z-50 flex flex-col bg-white dark:bg-[#070B14] border-r border-slate-200 dark:border-slate-800 shadow-2xl transition-transform duration-300 ease-in-out select-none ${
+        aria-label="Navigation Drawer"
+        className={`fixed inset-y-0 left-0 w-80 sm:w-96 max-w-[90vw] z-50 flex flex-col bg-white dark:bg-[#070b14] border-r border-slate-200 dark:border-white/[0.08] shadow-2xl backdrop-blur-2xl transition-transform duration-300 ease-in-out select-none ${
           isOpenMobile ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
-        {/* Drawer Header with Brand & Close Button */}
-        <div className="p-4 sm:p-5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3">
+        {/* Drawer Header */}
+        <div className="p-4 sm:p-5 border-b border-slate-200/80 dark:border-white/[0.08] flex items-center justify-between gap-3">
           <div 
             onClick={() => {
               onSelectView('overview');
@@ -153,160 +166,137 @@ export const Sidebar: React.FC<SidebarProps> = ({
             }}
             className="flex items-center gap-3 cursor-pointer group"
           >
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 via-cyan-500 to-indigo-600 flex items-center justify-center text-slate-950 font-black shadow-md shadow-indigo-500/20 group-hover:shadow-indigo-500/40 transition-all shrink-0">
-              <Zap className="w-5 h-5 fill-slate-950 text-slate-950" />
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-violet-600 via-indigo-600 to-cyan-400 p-[1px] shadow-sm shadow-violet-500/20 group-hover:shadow-violet-500/40 transition-all shrink-0">
+              <div className="w-full h-full rounded-[10px] bg-slate-900 flex items-center justify-center">
+                <Zap className="w-4 h-4 text-cyan-400 fill-cyan-400" />
+              </div>
             </div>
             <div>
               <div className="flex items-center gap-1.5">
-                <span className="font-bold text-lg tracking-tight text-slate-900 group-hover:text-indigo-600 dark:text-white dark:group-hover:text-cyan-300 transition-colors">
+                <span className="font-extrabold text-base tracking-tight text-slate-900 dark:text-white font-display">
                   VibePilot
                 </span>
-                <span className="px-2 py-0.5 rounded text-xs font-mono font-bold bg-indigo-50 text-indigo-700 border border-indigo-200 dark:bg-cyan-950/80 dark:text-cyan-400 dark:border-cyan-800/60">
+                <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-violet-50 text-violet-700 border border-violet-200 dark:bg-violet-950/60 dark:text-cyan-400 dark:border-cyan-500/30">
                   2.0
                 </span>
               </div>
-              <p className="text-xs text-slate-500 dark:text-slate-400 font-mono mt-0.5">
-                Ready-to-Ship Engine
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                AI App Production Readiness
               </p>
             </div>
           </div>
 
-          {/* Accessible Close Button */}
           <button
             type="button"
             onClick={onCloseMobile}
-            className="p-2 rounded-xl text-slate-500 hover:text-slate-900 hover:bg-slate-100 dark:text-slate-400 dark:hover:text-white dark:hover:bg-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 transition-colors"
-            aria-label="Close navigation menu"
-            title="Close navigation menu"
+            className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/[0.06] transition-colors focus:outline-none focus:ring-2 focus:ring-cyan-500 cursor-pointer"
+            aria-label="Close navigation"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        {/* Product Tagline Banner */}
-        <div className="px-4 py-2.5 bg-slate-50 dark:bg-slate-950/80 border-b border-slate-200 dark:border-slate-800/60 text-xs text-slate-600 dark:text-slate-300 font-sans flex items-center gap-2">
-          <span className="w-2 h-2 rounded-full bg-cyan-500 dark:bg-cyan-400 shrink-0" />
-          <span className="italic leading-tight font-medium">“AI writes the app. VibePilot gets it ready to ship.”</span>
-        </div>
+        {/* Navigation Items List */}
+        <div className="flex-1 overflow-y-auto p-3 sm:p-4 space-y-1">
+          <div className="px-3 py-1.5 text-[10px] font-mono uppercase tracking-widest text-slate-400 dark:text-slate-500 font-semibold">
+            Workspace Navigation
+          </div>
 
-        {/* Navigation Links (Scrollable) */}
-        <div className="flex-1 overflow-y-auto p-3.5 space-y-6 scrollbar-thin">
-          {/* Primary Navigation Sections */}
-          <div className="space-y-1.5">
-            <div className="px-3 pb-1 text-xs font-mono text-slate-400 dark:text-slate-500 uppercase tracking-wider font-semibold">
-              Primary Destinations
-            </div>
+          {navItems.map((item) => {
+            const Icon = item.icon;
+            const isActive = activeView === item.id;
 
-            {primaryNavItems.map((item) => {
-              const Icon = item.icon;
-              const isActive = activeView === item.id || 
-                (item.id === 'receipts-history' && activeView === 'receipt');
-
-              return (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => {
-                    onSelectView(item.id);
-                    onCloseMobile();
-                  }}
-                  className={`w-full flex items-center justify-between px-3.5 py-3 rounded-xl text-left transition-all group focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${
-                    isActive
-                      ? 'bg-indigo-50/80 border border-indigo-200 text-indigo-950 font-semibold shadow-sm dark:bg-indigo-950/60 dark:border-indigo-700/60 dark:text-white dark:shadow-md'
-                      : 'text-slate-700 hover:text-slate-900 hover:bg-slate-100/80 border border-transparent dark:text-slate-300 dark:hover:text-white dark:hover:bg-slate-900/60'
-                  }`}
-                >
-                  <div className="flex items-center gap-3.5 min-w-0">
-                    <div className={`p-2 rounded-lg transition-colors shrink-0 ${
-                      isActive 
-                        ? 'bg-indigo-600 text-white shadow-sm' 
-                        : 'bg-slate-100 text-slate-600 group-hover:bg-slate-200 dark:bg-slate-900 dark:text-slate-400 dark:group-hover:text-slate-200'
-                    }`}>
-                      <Icon className="w-4 h-4 sm:w-5 sm:h-5" />
+            return (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => {
+                  onSelectView(item.id);
+                  onCloseMobile();
+                }}
+                className={`w-full text-left p-2.5 rounded-xl transition-all duration-150 flex items-center justify-between gap-3 group relative cursor-pointer ${
+                  isActive
+                    ? 'bg-violet-50 text-violet-950 border border-violet-200/80 dark:bg-white/[0.06] dark:text-white dark:border-white/[0.1] shadow-sm font-semibold'
+                    : 'text-slate-700 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-white/[0.04] border border-transparent'
+                }`}
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className={`p-1.5 rounded-lg shrink-0 transition-colors ${
+                    isActive 
+                      ? 'bg-violet-600 text-white dark:bg-cyan-500 dark:text-slate-950' 
+                      : 'bg-slate-100 dark:bg-white/[0.05] text-slate-500 dark:text-slate-400 group-hover:text-slate-900 dark:group-hover:text-white'
+                  }`}>
+                    <Icon className="w-4 h-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-xs font-semibold tracking-tight truncate">
+                      {item.label}
                     </div>
-                    <div className="min-w-0">
-                      <div className="text-sm sm:text-base font-semibold tracking-tight truncate">
-                        {item.label}
-                      </div>
-                      <div className="text-xs text-slate-500 dark:text-slate-400 truncate mt-0.5">
-                        {item.description}
-                      </div>
+                    <div className="text-[11px] text-slate-400 dark:text-slate-500 truncate">
+                      {item.description}
                     </div>
                   </div>
+                </div>
 
-                  {item.badge && (
-                    <span className={`px-2 py-0.5 rounded text-xs font-mono border ml-2 shrink-0 ${item.badgeColor}`}>
-                      {item.badge}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Workflow Sub-Stages */}
-          <div className="space-y-1.5 pt-2 border-t border-slate-200 dark:border-slate-800">
-            <div className="px-3 pb-1 text-xs font-mono text-slate-400 dark:text-slate-500 uppercase tracking-wider font-semibold">
-              Pipeline Sub-Stages
-            </div>
-
-            {subNavItems.map((item) => {
-              const Icon = item.icon;
-              const isActive = activeView === item.id || 
-                (item.id === 'diagnose' && activeView === 'plan');
-
-              return (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => {
-                    onSelectView(item.id);
-                    onCloseMobile();
-                  }}
-                  className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-left transition-all group focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${
-                    isActive
-                      ? 'bg-cyan-50/80 border border-cyan-200 text-cyan-950 font-semibold dark:bg-cyan-950/40 dark:border-cyan-800/60 dark:text-cyan-200'
-                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100 border border-transparent dark:text-slate-400 dark:hover:text-slate-200 dark:hover:bg-slate-900/60'
-                  }`}
-                >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="p-1.5 rounded-lg bg-slate-100 text-slate-500 dark:bg-slate-900 dark:text-slate-400 shrink-0">
-                      <Icon className="w-4 h-4" />
-                    </div>
-                    <div className="min-w-0">
-                      <div className="text-xs sm:text-sm font-semibold truncate">
-                        {item.label}
-                      </div>
-                      <div className="text-[11px] text-slate-400 dark:text-slate-500 truncate">
-                        {item.description}
-                      </div>
-                    </div>
-                  </div>
-                  <ArrowRight className="w-3.5 h-3.5 text-slate-400 opacity-0 group-hover:opacity-100 transition-opacity" />
-                </button>
-              );
-            })}
-          </div>
+                {item.badge && (
+                  <span className={`px-2 py-0.5 rounded text-[10px] shrink-0 ${item.badgeColor || 'bg-slate-200 text-slate-800'}`}>
+                    {item.badge}
+                  </span>
+                )}
+              </button>
+            );
+          })}
         </div>
 
-        {/* Telemetry Status Widget in Drawer Footer */}
-        <div className="p-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-950/70 space-y-2.5">
-          <div className="flex items-center justify-between text-xs font-mono">
-            <span className="text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
-              <Activity className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" /> Mode:
-            </span>
-            <span className={`font-semibold ${isDemoMode ? 'text-amber-700 dark:text-amber-300' : 'text-emerald-700 dark:text-emerald-400'}`}>
-              {isDemoMode ? 'Demo Telemetry' : 'Live Connected'}
-            </span>
-          </div>
-
-          <button
-            type="button"
-            onClick={onToggleDemoMode}
-            className="w-full py-1.5 px-3 rounded-lg bg-white hover:bg-slate-100 border border-slate-300 text-slate-700 dark:bg-slate-900 dark:hover:bg-slate-800 dark:border-slate-700 dark:text-slate-200 text-xs font-medium transition-colors flex items-center justify-center gap-1.5 shadow-sm"
+        {/* Drawer Bottom: User Profile & Mode Indicator */}
+        <div className="p-4 border-t border-slate-200/80 dark:border-white/[0.08] bg-slate-50/50 dark:bg-white/[0.01] space-y-3">
+          {/* User Profile Card */}
+          <div 
+            onClick={() => {
+              if (onOpenLoginModal) {
+                onOpenLoginModal();
+                onCloseMobile();
+              }
+            }}
+            className="p-2.5 rounded-xl bg-white dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.06] flex items-center justify-between gap-3 cursor-pointer hover:border-violet-300 dark:hover:border-white/[0.15] transition-all"
           >
-            <span>Switch to {isDemoMode ? 'Connected Mode' : 'Demo Mode'}</span>
-          </button>
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-violet-600 to-cyan-500 p-[1px] shrink-0">
+                <div className="w-full h-full rounded-[7px] bg-slate-900 flex items-center justify-center text-white text-xs font-bold">
+                  {currentUser ? currentUser.name.charAt(0) : <User className="w-4 h-4 text-slate-400" />}
+                </div>
+              </div>
+              <div className="min-w-0">
+                <div className="text-xs font-semibold text-slate-900 dark:text-white truncate">
+                  {currentUser ? currentUser.name : 'Sign In'}
+                </div>
+                <div className="text-[10px] text-slate-400 dark:text-slate-500 truncate">
+                  {currentUser ? currentUser.workspace : 'Click to connect profile'}
+                </div>
+              </div>
+            </div>
+
+            <span className="text-[10px] font-mono text-cyan-600 dark:text-cyan-400 font-bold shrink-0">
+              {currentUser ? 'PROFILE' : 'LOGIN'}
+            </span>
+          </div>
+
+          {/* Mode Switcher */}
+          <div className="flex items-center justify-between text-xs font-mono">
+            <span className="text-slate-500 dark:text-slate-400">Engine Mode:</span>
+            <button
+              type="button"
+              onClick={onToggleDemoMode}
+              className={`flex items-center gap-1.5 px-2 py-0.5 rounded-lg border text-[11px] font-bold transition-all cursor-pointer ${
+                isDemoMode
+                  ? 'bg-amber-500/10 border-amber-500/30 text-amber-600 dark:text-amber-400'
+                  : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400'
+              }`}
+            >
+              <span className={`w-1.5 h-1.5 rounded-full ${isDemoMode ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500'}`} />
+              <span>{isDemoMode ? 'DEMO FIXTURE' : 'LIVE BACKEND'}</span>
+            </button>
+          </div>
         </div>
       </nav>
     </>

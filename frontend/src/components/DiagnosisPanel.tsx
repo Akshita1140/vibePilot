@@ -14,8 +14,14 @@ import {
   ChevronDown,
   ChevronUp,
   HelpCircle,
-  CheckCircle2
+  CheckCircle2,
+  Copy,
+  Check,
+  AlertTriangle,
+  FileCode,
+  ShieldCheck
 } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
 
 interface DiagnosisPanelProps {
   diagnosis?: Diagnosis;
@@ -32,21 +38,30 @@ export const DiagnosisPanel: React.FC<DiagnosisPanelProps> = ({
   onProceedToPlan,
   onBackToMap,
 }) => {
-  const [showStageExplainer, setShowStageExplainer] = useState<boolean>(true);
+  const [showWhyItMatters, setShowWhyItMatters] = useState<boolean>(true);
+  const [copiedEvidence, setCopiedEvidence] = useState(false);
+
+  const handleCopyEvidence = (text: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedEvidence(true);
+    setTimeout(() => setCopiedEvidence(false), 2000);
+  };
 
   if (!diagnosis) {
     return (
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-8 sm:p-12 text-center space-y-4 shadow-sm">
-        <div className="w-14 h-14 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center mx-auto text-slate-500">
+      <div className="rounded-3xl border border-slate-200/80 dark:border-white/[0.08] bg-white/80 dark:bg-[#0c101d]/75 p-8 sm:p-12 text-center space-y-4 shadow-xl backdrop-blur-2xl">
+        <div className="w-14 h-14 rounded-2xl bg-slate-100 dark:bg-white/[0.04] flex items-center justify-center mx-auto text-slate-400">
           <AlertOctagon className="w-8 h-8" />
         </div>
-        <h3 className="text-xl font-bold text-slate-900 dark:text-white">No Failure Diagnostics Found</h3>
-        <p className="text-sm sm:text-base text-slate-600 dark:text-slate-400 max-w-lg mx-auto leading-relaxed">
+        <h3 className="text-xl font-bold text-slate-900 dark:text-white font-display">
+          No Failure Diagnostics Found
+        </h3>
+        <p className="text-sm text-slate-600 dark:text-slate-400 max-w-lg mx-auto leading-relaxed">
           The intake analysis did not capture runtime exceptions or configuration breakages for <span className="font-semibold text-slate-800 dark:text-slate-200">{appName}</span>. All detected routes passed initial syntax and environment checks.
         </p>
         <button
           onClick={onBackToMap}
-          className="px-5 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white dark:bg-slate-800 dark:hover:bg-slate-700 text-sm font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-cyan-500"
+          className="px-5 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white dark:bg-white/[0.08] dark:hover:bg-white/[0.12] text-xs font-semibold transition-all cursor-pointer"
         >
           ← Return to App Map
         </button>
@@ -54,205 +69,223 @@ export const DiagnosisPanel: React.FC<DiagnosisPanelProps> = ({
     );
   }
 
-  const severityColors = {
-    critical: 'bg-rose-100 text-rose-900 border-rose-300 dark:bg-rose-950/80 dark:text-rose-300 dark:border-rose-800/80',
-    high: 'bg-amber-100 text-amber-900 border-amber-300 dark:bg-amber-950/80 dark:text-amber-300 dark:border-amber-800/80',
-    medium: 'bg-indigo-100 text-indigo-900 border-indigo-300 dark:bg-indigo-950/80 dark:text-indigo-300 dark:border-indigo-800/80',
-    low: 'bg-slate-100 text-slate-800 border-slate-300 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700',
+  // Severity config with Color + Icon + Text (Accessible, never color-only)
+  const severityConfig = {
+    critical: {
+      badgeClass: 'bg-rose-500/15 text-rose-500 border-rose-500/30',
+      icon: ShieldAlert,
+      label: 'CRITICAL SEVERITY',
+      description: 'Fatal startup blocker. App will fail to boot or crash on user entry.',
+    },
+    high: {
+      badgeClass: 'bg-amber-500/15 text-amber-500 border-amber-500/30',
+      icon: AlertTriangle,
+      label: 'HIGH RISK',
+      description: 'Major integration failure. Key functionality (e.g. OAuth or payments) is broken.',
+    },
+    medium: {
+      badgeClass: 'bg-violet-500/15 text-violet-400 border-violet-500/30',
+      icon: AlertOctagon,
+      label: 'MEDIUM RISK',
+      description: 'Sub-optimal configuration or unoptimized cache setting.',
+    },
+    low: {
+      badgeClass: 'bg-slate-500/15 text-slate-400 border-slate-500/30',
+      icon: CheckCircle2,
+      label: 'LOW RISK',
+      description: 'Minor lint or non-critical cosmetic warning.',
+    },
   }[diagnosis.severity];
+
+  const SeverityIcon = severityConfig.icon;
 
   return (
     <div className="space-y-6">
-      {/* Contextual Explainer Card: Priority 4 */}
-      <div className="bg-gradient-to-r from-rose-500/10 via-amber-500/10 to-transparent border border-rose-200/80 dark:border-rose-900/50 rounded-2xl p-5 sm:p-6 transition-colors duration-200">
-        <div className="flex items-start justify-between gap-4">
-          <div className="flex items-start gap-3">
-            <div className="p-2.5 rounded-xl bg-rose-500/20 text-rose-700 dark:text-rose-400 border border-rose-500/30 shrink-0 mt-0.5">
-              <Info className="w-5 h-5" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h3 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white">
-                  Stage 2: Root Cause Diagnosis & Error Identification
-                </h3>
-                <span className="text-xs px-2 py-0.5 rounded-full bg-rose-100 text-rose-800 dark:bg-rose-950/70 dark:text-rose-300 font-mono font-semibold">
-                  Active Stage
-                </span>
-              </div>
-              <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 mt-1 leading-relaxed">
-                VibePilot inspects runtime traces, missing environment keys, and synthetic route response payloads to diagnose fatal deployment blockers before you ship.
-              </p>
-            </div>
-          </div>
-
-          <button
-            onClick={() => setShowStageExplainer(!showStageExplainer)}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-200/50 dark:hover:bg-slate-800 transition-colors"
-            aria-label={showStageExplainer ? 'Collapse explanation' : 'Expand explanation'}
-          >
-            {showStageExplainer ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
-          </button>
-        </div>
-
-        {showStageExplainer && (
-          <div className="mt-4 pt-4 border-t border-rose-200/60 dark:border-rose-900/40 grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs sm:text-sm">
-            <div className="bg-white/70 dark:bg-slate-950/50 p-3 rounded-xl border border-rose-100 dark:border-rose-900/30 space-y-1">
-              <span className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
-                <AlertOctagon className="w-4 h-4 text-rose-600 dark:text-rose-400" />
-                1. What this error indicates
+      {/* 1. Header & One-line UX Helper Banner */}
+      <div className="rounded-3xl p-6 sm:p-7 border border-slate-200/80 dark:border-white/[0.08] bg-white/80 dark:bg-[#0c101d]/75 backdrop-blur-2xl shadow-xl transition-colors duration-200">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-200/80 dark:border-white/[0.06]">
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
+              <span className="text-xs font-mono uppercase tracking-widest text-slate-400 font-semibold">
+                Stage 2 of 7: Root Cause Diagnostics
               </span>
-              <p className="text-slate-600 dark:text-slate-400 text-xs">
-                A critical missing secret, invalid callback URI, or unprovisioned database table preventing application startup.
-              </p>
             </div>
-
-            <div className="bg-white/70 dark:bg-slate-950/50 p-3 rounded-xl border border-rose-100 dark:border-rose-900/30 space-y-1">
-              <span className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
-                <Lightbulb className="w-4 h-4 text-amber-600 dark:text-amber-400" />
-                2. Why a fix is proposed
-              </span>
-              <p className="text-slate-600 dark:text-slate-400 text-xs">
-                VibePilot synthesizes the exact configuration delta and commands required so you don&apos;t have to hunt through provider docs.
-              </p>
-            </div>
-
-            <div className="bg-white/70 dark:bg-slate-950/50 p-3 rounded-xl border border-rose-100 dark:border-rose-900/30 space-y-1">
-              <span className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
-                <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                3. What happens next
-              </span>
-              <p className="text-slate-600 dark:text-slate-400 text-xs">
-                Review the Change Plan in Stage 3, authorize sensitive execution via the human gate, and let VibePilot verify health.
-              </p>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Main Diagnosis Card */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 sm:p-6 shadow-sm transition-colors duration-200">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-slate-200 dark:border-slate-800">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2.5 flex-wrap">
-              <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-pulse" />
-              <h2 className="text-xl sm:text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight">
-                Failure Diagnosis: {appName}
-              </h2>
-              <span className={`px-2.5 py-0.5 rounded-md text-xs font-mono uppercase font-bold border ${severityColors}`}>
-                {diagnosis.severity} Severity
-              </span>
-              {isDemoMode && (
-                <span className="px-2.5 py-0.5 rounded-md text-xs font-mono bg-amber-100 text-amber-900 border border-amber-300 dark:bg-amber-500/10 dark:text-amber-300 dark:border-amber-500/30 font-bold">
-                  SIMULATED SCENARIO
-                </span>
-              )}
-            </div>
-            <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400">
-              Correlated from runtime HTTP response codes, process stdout logs, and static dependency AST inspection.
-            </p>
+            <h2 className="text-xl sm:text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight mt-1 font-display">
+              Failure Diagnosis: {appName}
+            </h2>
           </div>
 
           <div className="flex items-center gap-2.5 shrink-0">
             <button
+              type="button"
               onClick={onBackToMap}
-              className="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-200 text-xs sm:text-sm font-semibold transition-colors"
+              className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-white/[0.04] dark:hover:bg-white/[0.08] text-slate-700 dark:text-slate-300 text-xs font-medium transition-colors"
             >
               ← App Map
             </button>
-
             <button
+              type="button"
               onClick={onProceedToPlan}
-              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-semibold text-xs sm:text-sm shadow-lg shadow-cyan-600/30 transition-all focus:outline-none focus:ring-2 focus:ring-cyan-500"
+              className="flex items-center gap-1.5 px-5 py-2 rounded-xl bg-gradient-to-r from-violet-600 via-indigo-600 to-cyan-500 hover:brightness-110 active:scale-[0.98] text-white font-bold text-xs sm:text-sm shadow-md shadow-violet-500/25 transition-all cursor-pointer"
             >
-              <span>Inspect Proposed Plan</span>
+              <span>Review Change Plan</span>
               <ArrowRight className="w-4 h-4" />
             </button>
           </div>
         </div>
 
-        {/* Issue Overview Panel */}
-        <div className="pt-6 space-y-5">
-          <div className="bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 rounded-xl p-4 sm:p-5 space-y-3">
-            <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
-              <div>
-                <span className="text-xs font-mono text-rose-700 dark:text-rose-400 uppercase tracking-wider block font-bold">
-                  Fatal Runtime Failure
-                </span>
-                <h3 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white mt-1">
-                  {diagnosis.issueTitle}
-                </h3>
-              </div>
-              <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs font-mono shrink-0 shadow-sm">
-                <Activity className="w-4 h-4 text-cyan-600 dark:text-cyan-400" />
-                <span className="text-slate-500 dark:text-slate-400">Diagnostic Confidence:</span>
-                <span className="font-bold text-cyan-700 dark:text-cyan-300">{diagnosis.confidenceScore}%</span>
-              </div>
-            </div>
-
-            {/* Error Message Snippet */}
-            <div className="bg-rose-50/90 dark:bg-slate-950 border border-rose-200 dark:border-slate-800 rounded-xl p-4 font-mono text-xs sm:text-sm text-rose-900 dark:text-rose-300 space-y-1.5 overflow-x-auto shadow-inner">
-              <div className="text-xs text-rose-600 dark:text-slate-400 select-none uppercase tracking-wider font-bold">
-                Captured Exception / Error Payload:
-              </div>
-              <p className="leading-relaxed whitespace-pre-wrap">{diagnosis.errorText}</p>
-            </div>
-
-            {/* URL if available */}
-            {diagnosis.errorUrl && (
-              <div className="flex items-center gap-2 text-xs sm:text-sm font-mono text-slate-600 dark:text-slate-400 pt-1">
-                <span className="text-slate-500 shrink-0 font-sans">Endpoint Involved:</span>
-                <a
-                  href={diagnosis.errorUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-cyan-700 dark:text-cyan-400 hover:underline flex items-center gap-1.5 truncate max-w-xl font-medium"
-                >
-                  <span className="truncate">{diagnosis.errorUrl}</span>
-                  <ExternalLink className="w-3.5 h-3.5 shrink-0" />
-                </a>
-              </div>
-            )}
-          </div>
-
-          {/* Root Cause & Remediation Split */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* Root Cause */}
-            <div className="bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 rounded-xl p-5 space-y-2">
-              <div className="flex items-center gap-2 text-xs sm:text-sm font-bold text-amber-900 dark:text-amber-300 uppercase font-mono tracking-wider">
-                <ShieldAlert className="w-4 h-4 text-amber-600 dark:text-amber-400" />
-                <span>Root-Cause Explanation</span>
-              </div>
-              <p className="text-sm sm:text-base text-slate-700 dark:text-slate-300 leading-relaxed">
-                {diagnosis.rootCause}
-              </p>
-            </div>
-
-            {/* Proposed Remediation */}
-            <div className="bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 rounded-xl p-5 space-y-2">
-              <div className="flex items-center gap-2 text-xs sm:text-sm font-bold text-emerald-900 dark:text-emerald-400 uppercase font-mono tracking-wider">
-                <Lightbulb className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                <span>Proposed Remediation</span>
-              </div>
-              <p className="text-sm sm:text-base text-slate-700 dark:text-slate-300 leading-relaxed">
-                {diagnosis.proposedRemedy}
-              </p>
-            </div>
-          </div>
-
-          {/* Evidence Snippet if present */}
-          {diagnosis.evidenceSnippet && (
-            <div className="bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 rounded-xl p-4 sm:p-5 space-y-2">
-              <div className="text-xs font-mono text-slate-500 dark:text-slate-400 uppercase tracking-widest font-bold flex items-center gap-2">
-                <Terminal className="w-4 h-4 text-slate-500" />
-                <span>Verification & Telemetry Evidence</span>
-              </div>
-              <div className="font-mono text-xs sm:text-sm text-slate-200 bg-slate-950 p-4 rounded-xl border border-slate-800 overflow-x-auto shadow-inner">
-                {diagnosis.evidenceSnippet}
-              </div>
-            </div>
-          )}
+        {/* UX CLARITY: One-line helper */}
+        <div className="mt-4 p-3 rounded-xl bg-slate-50 dark:bg-white/[0.02] border border-slate-200/80 dark:border-white/[0.04] flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300">
+          <Info className="w-4 h-4 text-cyan-400 shrink-0" />
+          <span>
+            <strong>What&apos;s happening:</strong> VibePilot parsed runtime traces and missing secrets. <strong>What happens next:</strong> Review the proposed code and config fixes in Stage 3.
+          </span>
         </div>
       </div>
+
+      {/* 2. SIGNATURE MOMENT: Staggered Issue Card with Confidence Score */}
+      <motion.div 
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.3 }}
+        className="rounded-3xl p-6 sm:p-8 border border-slate-200/80 dark:border-white/[0.08] bg-white/80 dark:bg-[#0c101d]/75 backdrop-blur-2xl shadow-xl space-y-6"
+      >
+        {/* Issue Title + Severity Chip + Confidence Score */}
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-5 border-b border-slate-200/80 dark:border-white/[0.06]">
+          <div className="space-y-1.5">
+            <div className="flex items-center gap-2.5 flex-wrap">
+              {/* Severity Chip (Icon + Color + Text) */}
+              <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-mono font-bold border ${severityConfig.badgeClass}`}>
+                <SeverityIcon className="w-3.5 h-3.5" />
+                <span>{severityConfig.label}</span>
+              </span>
+
+              <span className="text-xs font-mono px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-white/[0.04] text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-white/[0.06]">
+                Component: {diagnosis.affectedComponent}
+              </span>
+
+              {/* Synthetic vs Live Indicator */}
+              <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-violet-500/10 text-violet-400 border border-violet-500/20">
+                {isDemoMode ? '[Synthetic Telemetry]' : '[Live AST Probe]'}
+              </span>
+            </div>
+
+            <h3 className="text-lg sm:text-2xl font-bold text-slate-900 dark:text-white tracking-tight font-display mt-2">
+              {diagnosis.issueTitle}
+            </h3>
+          </div>
+
+          {/* AI Confidence Score Gauge */}
+          <div className="rounded-2xl p-3 bg-slate-50 dark:bg-white/[0.03] border border-slate-200/80 dark:border-white/[0.06] text-right shrink-0">
+            <span className="text-[10px] font-mono uppercase text-slate-400 block font-semibold">
+              Root Cause Confidence
+            </span>
+            <div className="flex items-baseline justify-end gap-1.5 mt-0.5">
+              <span className="text-xl sm:text-2xl font-black font-mono text-cyan-400">
+                {Math.round(diagnosis.confidenceScore * 100)}%
+              </span>
+              <span className="text-[11px] text-slate-400 font-mono">match</span>
+            </div>
+          </div>
+        </div>
+
+        {/* 3. Root Cause Breakdown */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="p-4 rounded-2xl bg-rose-500/[0.04] border border-rose-500/20 space-y-1.5">
+            <div className="flex items-center gap-2 text-xs font-mono font-bold text-rose-500 uppercase tracking-wider">
+              <AlertOctagon className="w-4 h-4" />
+              <span>Identified Root Cause</span>
+            </div>
+            <p className="text-xs sm:text-sm text-slate-700 dark:text-slate-300 leading-relaxed">
+              {diagnosis.rootCause}
+            </p>
+          </div>
+
+          <div className="p-4 rounded-2xl bg-cyan-500/[0.04] border border-cyan-500/20 space-y-1.5">
+            <div className="flex items-center gap-2 text-xs font-mono font-bold text-cyan-400 uppercase tracking-wider">
+              <Lightbulb className="w-4 h-4 text-cyan-400" />
+              <span>Proposed Automated Remedy</span>
+            </div>
+            <p className="text-xs sm:text-sm text-slate-700 dark:text-slate-300 leading-relaxed">
+              {diagnosis.proposedRemedy}
+            </p>
+          </div>
+        </div>
+
+        {/* 4. SIGNATURE MOMENT: "Why It Matters" Expandable Section */}
+        <div className="rounded-2xl border border-slate-200/80 dark:border-white/[0.08] overflow-hidden bg-slate-50/50 dark:bg-white/[0.02]">
+          <button
+            type="button"
+            onClick={() => setShowWhyItMatters(!showWhyItMatters)}
+            className="w-full p-4 flex items-center justify-between text-left hover:bg-slate-100/60 dark:hover:bg-white/[0.04] transition-colors cursor-pointer"
+          >
+            <div className="flex items-center gap-2.5">
+              <Info className="w-4 h-4 text-violet-500 dark:text-cyan-400" />
+              <span className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white">
+                Why this failure blocks production deployment
+              </span>
+            </div>
+            {showWhyItMatters ? <ChevronUp className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
+          </button>
+
+          <AnimatePresence>
+            {showWhyItMatters && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: 'auto', opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                className="px-4 pb-4 text-xs sm:text-sm text-slate-600 dark:text-slate-300 space-y-2 border-t border-slate-200/60 dark:border-white/[0.04] pt-3"
+              >
+                <p>
+                  Modern AI builders (Bolt, Lovable, v0) generate fast UI components and API route files, but leave third-party identity, database connection strings, and webhook signing secrets empty or misconfigured.
+                </p>
+                <p>
+                  Without VibePilot&apos;s automated diagnosis and fix staging, users encounter silent 500 runtime errors or OAuth redirects pointing to localhost:3000 instead of production origins.
+                </p>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+
+        {/* 5. SIGNATURE MOMENT: Evidence Snippet in Developer-Grade Mono Code Block */}
+        {diagnosis.evidenceSnippet && (
+          <div className="space-y-2">
+            <div className="flex items-center justify-between px-1">
+              <div className="flex items-center gap-2 text-xs font-mono text-slate-400">
+                <FileCode className="w-3.5 h-3.5 text-cyan-400" />
+                <span>Captured Exception Trace &amp; Telemetry Evidence</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => handleCopyEvidence(diagnosis.evidenceSnippet || '')}
+                className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-white/[0.06] dark:hover:bg-white/[0.1] text-[11px] font-mono text-slate-600 dark:text-slate-300 transition-colors cursor-pointer"
+              >
+                {copiedEvidence ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                <span>{copiedEvidence ? 'Copied' : 'Copy Trace'}</span>
+              </button>
+            </div>
+
+            <div className="rounded-2xl p-4 bg-[#05070d] border border-white/[0.08] font-mono text-xs overflow-x-auto text-slate-300 leading-relaxed shadow-inner">
+              <pre className="whitespace-pre-wrap select-all">
+                {diagnosis.evidenceSnippet}
+              </pre>
+            </div>
+          </div>
+        )}
+
+        {/* Action Button to Proceed to Plan */}
+        <div className="pt-2 flex justify-end">
+          <button
+            type="button"
+            onClick={onProceedToPlan}
+            className="flex items-center gap-2 px-6 py-3 rounded-xl bg-gradient-to-r from-violet-600 via-indigo-600 to-cyan-500 hover:brightness-110 active:scale-[0.98] text-white font-bold text-xs sm:text-sm shadow-lg shadow-violet-500/25 transition-all cursor-pointer"
+          >
+            <span>Stage 3: Review Proposed Change Plan</span>
+            <ArrowRight className="w-4 h-4" />
+          </button>
+        </div>
+      </motion.div>
     </div>
   );
 };

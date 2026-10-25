@@ -1,21 +1,32 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Plus_Jakarta_Sans, Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+const displayFont = Plus_Jakarta_Sans({
+  variable: "--font-display",
   subsets: ["latin"],
+  weight: ["500", "600", "700", "800"],
+  display: "swap",
 });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
+const sansFont = Inter({
+  variable: "--font-sans",
   subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  display: "swap",
+});
+
+const monoFont = JetBrains_Mono({
+  variable: "--font-mono",
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  display: "swap",
 });
 
 export const metadata: Metadata = {
-  title: "VibePilot - AI writes the app. VibePilot gets it ready to ship.",
-  description: "AI writes the app. VibePilot gets it ready to ship. Understand the app, diagnose setup failures, approve sensitive fixes, and view an evidence-backed receipt.",
-  keywords: ["AI app deployment", "setup verification", "Next.js", "DevOps", "AI agent readiness", "TinyFish"],
+  title: "VibePilot — AI writes the app. VibePilot gets it ready to ship.",
+  description: "AI writes the app. VibePilot gets it ready to ship. Understand the architecture, diagnose fatal blockers, authorize sensitive changes, and verify with an immutable Setup Receipt.",
+  keywords: ["AI app deployment", "setup verification", "Next.js", "DevOps", "AI agent readiness", "TinyFish", "Production Readiness"],
 };
 
 export default function RootLayout({
@@ -27,7 +38,7 @@ export default function RootLayout({
     <html
       lang="en"
       suppressHydrationWarning
-      className={`${geistSans.variable} ${geistMono.variable} dark h-full antialiased`}
+      className={`${displayFont.variable} ${sansFont.variable} ${monoFont.variable} dark h-full antialiased`}
     >
       <head>
         <script
@@ -51,7 +62,7 @@ export default function RootLayout({
           }}
         />
       </head>
-      <body className="min-h-full flex flex-col bg-slate-50 text-slate-900 dark:bg-[#090D16] dark:text-slate-100 selection:bg-indigo-500/30 selection:text-indigo-600 dark:selection:text-indigo-200 transition-colors duration-200">
+      <body className="min-h-full flex flex-col bg-slate-50 text-slate-900 dark:bg-[#06080F] dark:text-slate-100 selection:bg-cyan-500/30 selection:text-cyan-800 dark:selection:text-cyan-200 transition-colors duration-200 font-sans">
         {children}
       </body>
     </html>

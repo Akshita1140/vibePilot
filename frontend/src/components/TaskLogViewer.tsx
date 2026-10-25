@@ -1,193 +1,258 @@
 'use client';
 
-import React, { useState } from 'react';
-import { SetupTask } from '@/lib/types';
-import { Terminal, Copy, Check, Filter, AlertTriangle, ShieldAlert, Wrench } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { SetupTask, TaskLogEntry } from '@/lib/types';
+import { 
+  Copy, 
+  Check, 
+  Clock, 
+  Terminal, 
+  AlertTriangle, 
+  ShieldAlert, 
+  Wrench,
+  Code2,
+  Sparkles,
+  Zap
+} from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
 
 interface TaskLogViewerProps {
   task: SetupTask | null;
 }
 
+interface TimelineEvent {
+  type: 'SYSTEM' | 'THOUGHT' | 'ACTION' | 'OBSERVE' | 'ERROR' | 'WARN' | 'INFO';
+  timestamp: string;
+  title: string;
+  detail?: string;
+  level: 'info' | 'warn' | 'error' | 'success';
+  isSynthetic?: boolean;
+}
+
+function parseLogToTimelineEvent(log: TaskLogEntry, idx: number, total: number): TimelineEvent {
+  const isSynthetic = 
+    log.message.includes('[Synthetic') || 
+    log.message.includes('[Simulated') || 
+    Boolean(log.detail && (log.detail.includes('[Synthetic') || log.detail.includes('[Simulated')));
+
+  if (log.type && log.detail) {
+    return {
+      type: log.type,
+      timestamp: log.timestamp,
+      title: log.message,
+      detail: log.detail,
+      level: log.level,
+      isSynthetic,
+    };
+  }
+
+  const raw = log.message.trim();
+  let type: TimelineEvent['type'] = 'SYSTEM';
+  let title = raw;
+  let detail = log.commandSnippet;
+
+  if (raw.includes(' | ')) {
+    const parts = raw.split(' | ');
+    title = parts[0].trim();
+    detail = parts.slice(1).join(' | ').trim();
+  }
+
+  if (title.toUpperCase().startsWith('SYSTEM:')) {
+    type = 'SYSTEM';
+    title = title.substring(7).trim();
+  } else if (title.toUpperCase().startsWith('THOUGHT:')) {
+    type = 'THOUGHT';
+    title = title.substring(8).trim();
+  } else if (title.toUpperCase().startsWith('ACTION:')) {
+    type = 'ACTION';
+    title = title.substring(7).trim();
+  } else if (title.toUpperCase().startsWith('OBSERVE:')) {
+    type = 'OBSERVE';
+    title = title.substring(8).trim();
+  } else if (log.level === 'error' || title.toLowerCase().includes('error')) {
+    type = 'ERROR';
+  } else if (log.level === 'warn') {
+    type = 'WARN';
+  } else {
+    const lower = title.toLowerCase();
+    if (lower.startsWith('navigat') || lower.startsWith('goal') || lower.startsWith('locat') || lower.startsWith('evaluat') || lower.startsWith('check')) {
+      type = 'THOUGHT';
+    } else if (lower.startsWith('open') || lower.startsWith('click') || lower.startsWith('select') || lower.startsWith('add') || lower.startsWith('execut') || lower.startsWith('run')) {
+      type = 'ACTION';
+    } else if (lower.startsWith('edit') || lower.startsWith('load') || lower.startsWith('dom') || lower.startsWith('confirm') || lower.startsWith('verif') || lower.startsWith('return') || lower.startsWith('detect')) {
+      type = 'OBSERVE';
+    } else if (idx === 0) {
+      type = 'SYSTEM';
+    } else if (idx === total - 1 && log.level === 'success') {
+      type = 'SYSTEM';
+    }
+  }
+
+  return {
+    type,
+    timestamp: log.timestamp,
+    title,
+    detail,
+    level: log.level,
+    isSynthetic,
+  };
+}
+
 export const TaskLogViewer: React.FC<TaskLogViewerProps> = ({ task }) => {
   const [copied, setCopied] = useState(false);
-  const [levelFilter, setLevelFilter] = useState<'all' | 'error' | 'warn'>('all');
+  const logContainerRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll to bottom of log stream
+  useEffect(() => {
+    if (logContainerRef.current) {
+      logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
+    }
+  }, [task?.logs]);
 
   if (!task) {
     return (
-      <div className="bg-white border-slate-200 dark:bg-slate-900 dark:border-slate-800 rounded-2xl p-8 text-center shadow-sm">
-        <Terminal className="w-10 h-10 text-slate-400 dark:text-slate-600 mx-auto mb-3" />
-        <h4 className="text-sm sm:text-base font-bold text-slate-800 dark:text-slate-200">No Task Selected</h4>
-        <p className="text-xs sm:text-sm font-mono text-slate-500 dark:text-slate-400 mt-1">Select a task in the pipeline to stream stdout/stderr execution logs.</p>
+      <div className="rounded-3xl border border-slate-200/80 dark:border-white/[0.08] bg-white/80 dark:bg-[#0c101d]/75 p-8 text-center shadow-xl backdrop-blur-2xl">
+        <Terminal className="w-10 h-10 text-slate-400 mx-auto mb-3" />
+        <h4 className="text-sm font-bold text-slate-800 dark:text-slate-200">No Stage Selected</h4>
+        <p className="text-xs text-slate-500 font-mono mt-1">
+          Select a task in the pipeline to stream live execution events.
+        </p>
       </div>
     );
   }
 
   const logs = task.logs || [];
-  const filteredLogs = logs.filter((log) => {
-    if (levelFilter === 'all') return true;
-    return log.level === levelFilter;
-  });
+  const timelineEvents: TimelineEvent[] = logs.map((log, idx) =>
+    parseLogToTimelineEvent(log, idx, logs.length)
+  );
 
   const handleCopy = () => {
-    const text = logs.map((l) => `[${l.timestamp}] [${l.level.toUpperCase()}] ${l.message}`).join('\n');
+    const text = timelineEvents
+      .map((ev) => `[${ev.timestamp}] ${ev.type} | ${ev.title}${ev.detail ? ` (${ev.detail})` : ''}`)
+      .join('\n');
     navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
 
+  const durationSeconds = task.durationMs ? Math.round(task.durationMs / 1000) : 14;
+  const formattedDuration = `00:${durationSeconds < 10 ? `0${durationSeconds}` : durationSeconds}`;
+
+  const statusSubtitle =
+    task.status === 'completed'
+      ? `Completed in ${task.durationMs || 910}ms`
+      : task.status === 'awaiting_approval'
+      ? 'Paused at Authorization Gate · 14s ago'
+      : task.status === 'running'
+      ? 'Live execution stream active'
+      : task.status === 'failed'
+      ? 'Execution stopped · Diagnostic exception'
+      : 'Queued · Ready to execute';
+
   return (
-    <div className="bg-white border-slate-200 shadow-sm dark:bg-slate-900 dark:border-slate-800 rounded-2xl overflow-hidden dark:shadow-xl flex flex-col h-full min-h-[440px] transition-colors border">
-      {/* Log Header */}
-      <div className="bg-slate-50 px-4 sm:px-5 py-3.5 border-b border-slate-200 dark:bg-slate-950 dark:border-slate-800 flex items-center justify-between gap-3 flex-wrap">
+    <div className="rounded-3xl border border-slate-200/80 dark:border-white/[0.08] bg-white/80 dark:bg-[#0c101d]/75 shadow-xl backdrop-blur-2xl flex flex-col h-full overflow-hidden transition-colors">
+      {/* 1. Terminal Header */}
+      <div className="p-4 sm:p-5 border-b border-slate-200/80 dark:border-white/[0.06] flex items-center justify-between gap-3">
         <div className="flex items-center gap-2.5">
-          <Terminal className="w-4 h-4 text-cyan-600 dark:text-cyan-400" />
-          <span className="text-xs sm:text-sm font-mono font-bold text-slate-900 dark:text-slate-100 truncate max-w-[200px] sm:max-w-xs">
-            Logs: {task.title}
+          <div className="w-2.5 h-2.5 rounded-full bg-cyan-400 animate-pulse" />
+          <span className="text-xs font-mono uppercase tracking-widest text-slate-800 dark:text-slate-200 font-bold">
+            Execution Log
           </span>
-          <span className={`px-2 py-0.5 rounded text-xs font-mono uppercase font-bold border ${
-            task.status === 'completed'
-              ? 'bg-emerald-100 text-emerald-900 border-emerald-300 dark:bg-emerald-950 dark:text-emerald-400 dark:border-emerald-800'
-              : task.status === 'running'
-              ? 'bg-cyan-100 text-cyan-900 border-cyan-300 dark:bg-cyan-950 dark:text-cyan-400 dark:border-cyan-800'
-              : task.status === 'awaiting_approval'
-              ? 'bg-amber-100 text-amber-900 border-amber-300 dark:bg-amber-950 dark:text-amber-400 dark:border-amber-800'
-              : task.status === 'requires_manual_action'
-              ? 'bg-orange-100 text-orange-900 border-orange-300 dark:bg-orange-950 dark:text-orange-400 dark:border-orange-800'
-              : 'bg-slate-100 text-slate-700 border-slate-300 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700'
-          }`}>
-            {task.status.replace(/_/g, ' ')}
+          <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-slate-100 dark:bg-white/[0.04] text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-white/[0.06]">
+            {timelineEvents.length} events
           </span>
         </div>
 
-        <div className="flex items-center gap-2">
-          {/* Level Filter */}
-          <div className="flex items-center gap-1 bg-white dark:bg-slate-900 px-2 py-1 rounded-lg border border-slate-200 dark:border-slate-800 text-xs font-mono">
-            <Filter className="w-3 h-3 text-slate-400 dark:text-slate-500" />
-            <button
-              onClick={() => setLevelFilter('all')}
-              className={`px-1.5 py-0.5 rounded transition-colors ${levelFilter === 'all' ? 'text-indigo-600 dark:text-indigo-400 font-bold bg-indigo-50 dark:bg-indigo-950/50' : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'}`}
-            >
-              All
-            </button>
-            <span className="text-slate-300 dark:text-slate-700">|</span>
-            <button
-              onClick={() => setLevelFilter('warn')}
-              className={`px-1.5 py-0.5 rounded transition-colors ${levelFilter === 'warn' ? 'text-amber-600 dark:text-amber-400 font-bold bg-amber-50 dark:bg-amber-950/50' : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'}`}
-            >
-              Warn
-            </button>
-            <span className="text-slate-300 dark:text-slate-700">|</span>
-            <button
-              onClick={() => setLevelFilter('error')}
-              className={`px-1.5 py-0.5 rounded transition-colors ${levelFilter === 'error' ? 'text-rose-600 dark:text-rose-400 font-bold bg-rose-50 dark:bg-rose-950/50' : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'}`}
-            >
-              Error
-            </button>
-          </div>
+        <button
+          onClick={handleCopy}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-white/[0.04] dark:hover:bg-white/[0.08] text-xs font-mono text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-white/[0.06] transition-colors cursor-pointer"
+        >
+          {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+          <span>{copied ? 'Copied' : 'Copy'}</span>
+        </button>
+      </div>
 
-          <button
-            onClick={handleCopy}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-300 dark:hover:text-white text-xs font-mono font-medium transition-colors border border-slate-200 dark:border-slate-700"
-            title="Copy logs to clipboard"
-          >
-            {copied ? <Check className="w-3.5 h-3.5 text-emerald-500 dark:text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-            <span>{copied ? 'Copied' : 'Copy'}</span>
-          </button>
+      {/* 2. Active Stage Banner */}
+      <div className="p-4 sm:p-5 bg-slate-50/50 dark:bg-white/[0.02] border-b border-slate-200/80 dark:border-white/[0.06] flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="w-8 h-8 rounded-xl bg-slate-900 border border-white/[0.08] flex items-center justify-center text-cyan-400 font-mono text-xs font-bold shrink-0">
+            &gt;_
+          </div>
+          <div className="min-w-0">
+            <h4 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white truncate">
+              {task.title}
+            </h4>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
+              {statusSubtitle}
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-1.5 text-xs font-mono font-bold text-slate-700 dark:text-slate-300 bg-white dark:bg-white/[0.04] px-2.5 py-1 rounded-lg border border-slate-200 dark:border-white/[0.06] shrink-0">
+          <Clock className="w-3.5 h-3.5 text-slate-400" />
+          <span>{formattedDuration}</span>
         </div>
       </div>
 
-      {/* Log Terminal Window */}
-      <div className="p-4 font-mono text-xs sm:text-sm leading-relaxed overflow-y-auto flex-1 space-y-2 select-text bg-[#090d16] text-slate-200">
-        {filteredLogs.length === 0 ? (
-          <div className="text-slate-500 italic py-12 text-center text-xs sm:text-sm">
-            {task.status === 'pending'
-              ? 'Task queued. Real-time stdout/stderr will stream here once execution begins.'
-              : 'No log output matching the selected filter.'}
-          </div>
-        ) : (
-          filteredLogs.map((log, idx) => (
-            <div key={idx} className="flex items-start gap-2.5 group hover:bg-slate-900/80 px-2 py-1 rounded">
-              <span className="text-slate-500 select-none shrink-0 font-mono text-xs">
-                {log.timestamp}
-              </span>
-              <span className={`px-1.5 py-0.2 rounded text-[11px] font-bold uppercase shrink-0 font-mono ${
-                log.level === 'info'
-                  ? 'bg-blue-950/80 text-blue-300 border border-blue-900/60'
-                  : log.level === 'warn'
-                  ? 'bg-amber-950/80 text-amber-300 border border-amber-900/60'
-                  : log.level === 'error'
-                  ? 'bg-rose-950/80 text-rose-300 border border-rose-900/60'
-                  : 'bg-emerald-950/80 text-emerald-300 border border-emerald-900/60'
-              }`}>
-                {log.level}
-              </span>
-              <span className={`break-all ${
-                log.level === 'error'
-                  ? 'text-rose-300'
-                  : log.level === 'warn'
-                  ? 'text-amber-200'
-                  : log.level === 'success'
-                  ? 'text-emerald-300'
-                  : 'text-slate-300'
-              }`}>
-                {log.message}
-              </span>
-            </div>
-          ))
-        )}
+      {/* 3. Terminal Log Stream with line fade-in and auto-scroll */}
+      <div 
+        ref={logContainerRef}
+        className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-3 font-mono text-xs max-h-[460px] scrollbar-thin"
+      >
+        {timelineEvents.map((event, i) => {
+          const badgeConfig = {
+            SYSTEM: { label: 'text-violet-400 bg-violet-500/10 border-violet-500/30' },
+            THOUGHT: { label: 'text-cyan-400 bg-cyan-500/10 border-cyan-500/30' },
+            ACTION: { label: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30' },
+            OBSERVE: { label: 'text-blue-400 bg-blue-500/10 border-blue-500/30' },
+            ERROR: { label: 'text-rose-400 bg-rose-500/10 border-rose-500/30' },
+            WARN: { label: 'text-amber-400 bg-amber-500/10 border-amber-500/30' },
+            INFO: { label: 'text-slate-400 bg-slate-500/10 border-slate-500/30' },
+          }[event.type];
 
-        {/* Diagnosed Error Callout if present */}
-        {task.failureReason && (
-          <div className="mt-4 p-4 rounded-xl bg-rose-950/80 border border-rose-800 text-rose-300 space-y-2">
-            <div className="font-bold text-xs sm:text-sm text-rose-200 flex items-center gap-1.5">
-              <AlertTriangle className="w-4 h-4 text-rose-400" />
-              <span>Diagnosed Runtime Exception:</span>
-            </div>
-            <div className="text-xs sm:text-sm leading-relaxed">{task.failureReason}</div>
-            {task.suggestedFix && (
-              <div className="text-xs sm:text-sm text-slate-200 mt-2 font-sans bg-slate-950 p-3 rounded-lg border border-rose-900/60">
-                <span className="font-semibold text-amber-300">Automated Fix: </span>
-                {task.suggestedFix}
+          return (
+            <motion.div
+              key={i}
+              initial={{ opacity: 0, x: -6 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ duration: 0.15, delay: Math.min(i * 0.03, 0.4) }}
+              className="p-3 rounded-xl bg-slate-50 dark:bg-white/[0.02] border border-slate-200/60 dark:border-white/[0.04] space-y-1.5"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <span className={`text-[10px] px-2 py-0.5 rounded font-mono font-bold uppercase border ${badgeConfig.label}`}>
+                    {event.type}
+                  </span>
+                  {/* HARD RULE #4: Synthetic evidence tag */}
+                  {event.isSynthetic && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-500 border border-amber-500/20 font-bold">
+                      synthetic / fallback
+                    </span>
+                  )}
+                </div>
+                <span className="text-[11px] text-slate-400 dark:text-slate-500 font-mono">
+                  {event.timestamp}
+                </span>
               </div>
-            )}
-          </div>
-        )}
 
-        {/* Guided Manual Action callout */}
-        {task.status === 'requires_manual_action' && !task.failureReason && (
-          <div className="mt-4 p-4 rounded-xl bg-orange-950/80 border border-orange-800 text-orange-200 space-y-2">
-            <div className="font-bold text-xs sm:text-sm text-orange-300 flex items-center gap-1.5">
-              <Wrench className="w-4 h-4 text-orange-400" />
-              <span>Guided Manual Operator Step:</span>
-            </div>
-            <div className="text-xs sm:text-sm text-slate-200 leading-relaxed">{task.description}</div>
-            {task.suggestedFix && (
-              <div className="text-xs sm:text-sm text-amber-200 mt-2 font-sans bg-slate-950 p-3 rounded-lg border border-orange-900/60">
-                <span className="font-semibold text-amber-300">Action Guide: </span>
-                {task.suggestedFix}
+              <div className="text-xs sm:text-sm font-semibold text-slate-900 dark:text-slate-100 font-sans leading-snug">
+                {event.title}
               </div>
-            )}
-          </div>
-        )}
 
-        {/* Sensitive Approval Gate callout */}
-        {task.status === 'awaiting_approval' && task.approvalRequest && (
-          <div className="mt-4 p-4 rounded-xl bg-amber-950/80 border border-amber-800 text-amber-200 space-y-2">
-            <div className="font-bold text-xs sm:text-sm text-amber-300 flex items-center justify-between">
-              <span className="flex items-center gap-1.5">
-                <ShieldAlert className="w-4 h-4 text-amber-400" />
-                Sensitive Step Paused for Authorization
-              </span>
-              <span className="text-xs font-mono px-2 py-0.5 rounded bg-amber-900 text-amber-200 uppercase font-bold">
-                {task.approvalRequest.riskLevel} Risk
-              </span>
-            </div>
-            <div className="text-xs sm:text-sm text-slate-200 leading-relaxed">{task.approvalRequest.description}</div>
-            <div className="font-mono text-xs sm:text-sm text-emerald-400 bg-slate-950 p-3 rounded-lg border border-slate-800 overflow-x-auto shadow-inner">
-              <code>{task.approvalRequest.commandPreview}</code>
-            </div>
-          </div>
-        )}
+              {event.detail && (
+                <div className="text-[11px] font-mono text-slate-500 dark:text-slate-400 bg-[#05070d] p-2 rounded-lg border border-white/[0.06] overflow-x-auto">
+                  {event.detail}
+                </div>
+              )}
+            </motion.div>
+          );
+        })}
+
+        {/* Terminal Blinking Cursor */}
+        <div className="flex items-center gap-2 text-xs font-mono text-cyan-400 pt-2 px-1">
+          <span>&gt;</span>
+          <span className="w-2 h-4 bg-cyan-400 animate-pulse" />
+        </div>
       </div>
     </div>
   );

@@ -12,7 +12,8 @@ import {
   Theme
 } from '@/lib/types';
 import { DEMO_PRESETS } from '@/lib/demo-data';
-import { VibePilotApi } from '@/lib/api';
+import { VibePilotApi, SafeReceiptStore } from '@/lib/api';
+import { adaptBackendJobToSetupRun } from '@/lib/backend-adapter';
 import { Sidebar } from '@/components/Sidebar';
 import { Header } from '@/components/Header';
 import { OverviewWorkspace } from '@/components/OverviewWorkspace';
@@ -27,14 +28,19 @@ import { SetupReceipt } from '@/components/SetupReceipt';
 import { ReceiptsHistory } from '@/components/ReceiptsHistory';
 import { SettingsPanel } from '@/components/SettingsPanel';
 import { IntegrationAlertModal } from '@/components/IntegrationAlertModal';
+import { UserLoginModal, getStoredUser, UserProfile } from '@/components/UserLoginModal';
+import { motion, AnimatePresence } from 'motion/react';
 
 export default function Home() {
   const [selectedPreset, setSelectedPreset] = useState<DemoPreset>(DEMO_PRESETS[0]);
   const [activeView, setActiveView] = useState<AppView>('overview');
+  const [overviewTab, setOverviewTab] = useState<'landing' | 'cockpit'>('landing');
   const [currentWorkflowStage, setCurrentWorkflowStage] = useState<WorkflowStage>('understand');
   const [isDemoMode, setIsDemoMode] = useState<boolean>(false);
   const [isIntegrationModalOpen, setIsIntegrationModalOpen] = useState<boolean>(false);
   const [isOpenMobile, setIsOpenMobile] = useState<boolean>(false);
+  const [isLoginModalOpen, setIsLoginModalOpen] = useState<boolean>(false);
+  const [currentUser, setCurrentUser] = useState<UserProfile | null>(() => getStoredUser());
 
   // Theme Management (Dark / Light Mode)
   const [theme, setTheme] = useState<Theme>(() => {
@@ -82,22 +88,7 @@ export default function Home() {
   const [analysis, setAnalysis] = useState<AppAnalysis>(DEMO_PRESETS[0].analysisData);
   const [setupRun, setSetupRun] = useState<SetupRun>(DEMO_PRESETS[0].setupRunData);
   const [receipt, setReceipt] = useState<SetupReceiptType>(DEMO_PRESETS[0].receiptData);
-  const [receiptsList, setReceiptsList] = useState<SetupReceiptType[]>(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        const stored = localStorage.getItem('vibepilot_receipts_archive');
-        if (stored) {
-          const parsed = JSON.parse(stored);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            return parsed;
-          }
-        }
-      } catch (e) {
-        console.warn('Failed to parse stored receipts:', e);
-      }
-    }
-    return DEMO_PRESETS.map((p) => p.receiptData);
-  });
+  const [receiptsList, setReceiptsList] = useState<SetupReceiptType[]>(() => SafeReceiptStore.loadReceipts());
 
   // Interaction State
   const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
@@ -118,29 +109,64 @@ export default function Home() {
     receipt: false,
   });
 
-  const saveReceiptToArchive = (newReceipt: SetupReceiptType) => {
-    setReceiptsList((prev) => {
-      const existsIdx = prev.findIndex((r) => r.receiptId === newReceipt.receiptId);
-      let updated: SetupReceiptType[];
-      if (existsIdx >= 0) {
-        updated = [...prev];
-        updated[existsIdx] = newReceipt;
-      } else {
-        updated = [newReceipt, ...prev];
-      }
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('vibepilot_receipts_archive', JSON.stringify(updated));
-      }
-      return updated;
-    });
-  };
+  const saveReceiptToArchive = React.useCallback((newReceipt: SetupReceiptType) => {
+    const updated = SafeReceiptStore.saveReceipt(newReceipt);
+    setReceiptsList(updated);
+  }, []);
 
   const handleClearReceipts = () => {
+    SafeReceiptStore.clearReceipts();
     setReceiptsList([]);
-    if (typeof window !== 'undefined') {
-      localStorage.removeItem('vibepilot_receipts_archive');
-    }
   };
+
+  // Reliably persist receipt to archive whenever setup run completes
+  React.useEffect(() => {
+    if (setupRun.overallStatus === 'completed' && receipt) {
+      saveReceiptToArchive(receipt);
+    }
+  }, [setupRun.overallStatus, receipt, saveReceiptToArchive]);
+
+  // Resilient Live Job Subscription (SSE with automatic polling fallback & unmount cleanup)
+  React.useEffect(() => {
+    if (isDemoMode) return;
+    if (!setupRun.runId || setupRun.runId.startsWith('run_')) return;
+
+    const cleanup = VibePilotApi.subscribeToJobUpdates(setupRun.runId, {
+      onUpdate: (backendJob) => {
+        const updatedRun = adaptBackendJobToSetupRun(backendJob);
+        setSetupRun(updatedRun);
+
+        if (backendJob.status === 'AWAITING_APPROVAL') {
+          const pendingTask = updatedRun.tasks.find((t) => t.status === 'awaiting_approval');
+          if (pendingTask) {
+            setActiveApprovalTask(pendingTask);
+            setApprovalModalOpen(true);
+            setCurrentWorkflowStage('approve');
+          }
+        }
+      },
+      onTerminal: (backendJob) => {
+        if (backendJob.status === 'DONE') {
+          VibePilotApi.getSetupReceipt(backendJob.job_id).then((res) => {
+            if (res.data) {
+              setReceipt(res.data);
+              saveReceiptToArchive(res.data);
+            }
+          }).catch((err) => {
+            console.warn('[Live Run] Receipt retrieval failed:', err);
+          });
+          setCompletedStages((prev) => ({ ...prev, act: true, verify: true, receipt: true }));
+        }
+      },
+      onError: (err) => {
+        console.warn('[Live Run] Stream subscription error:', err);
+      },
+    });
+
+    return () => {
+      cleanup();
+    };
+  }, [setupRun.runId, isDemoMode, saveReceiptToArchive]);
 
   // Preset Selection
   const handleSelectPreset = (preset: DemoPreset) => {
@@ -405,7 +431,7 @@ export default function Home() {
   const pendingApproval = !!setupRun.tasks.find((t) => t.status === 'awaiting_approval');
 
   return (
-    <div className="min-h-screen flex flex-col bg-slate-50 text-slate-900 dark:bg-[#070A13] dark:text-slate-100 selection:bg-cyan-500/30 selection:text-cyan-800 dark:selection:text-cyan-200 transition-colors">
+    <div className="min-h-screen flex flex-col bg-slate-50 text-slate-900 dark:bg-[#06080F] dark:text-slate-100 bg-mesh-light dark:bg-mesh-dark selection:bg-cyan-500/30 selection:text-cyan-800 dark:selection:text-cyan-200 transition-colors">
       {/* 1. Slide-over Navigation Drawer */}
       <Sidebar
         activeView={activeView}
@@ -416,6 +442,13 @@ export default function Home() {
         onCloseMobile={() => setIsOpenMobile(false)}
         receiptsCount={receiptsList.length}
         pendingApproval={pendingApproval}
+        currentUser={currentUser}
+        onOpenLoginModal={() => setIsLoginModalOpen(true)}
+        onNewAnalysis={() => {
+          setActiveView('overview');
+          setOverviewTab('landing');
+          setCurrentWorkflowStage('understand');
+        }}
       />
 
       {/* 2. Main Content Canvas */}
@@ -431,7 +464,8 @@ export default function Home() {
           onToggleDemoMode={handleToggleDemoMode}
           onResetDemo={handleResetDemo}
           onNewAnalysis={() => {
-            setActiveView('app-map');
+            setActiveView('overview');
+            setOverviewTab('landing');
             setCurrentWorkflowStage('understand');
           }}
           onOpenMobileSidebar={() => setIsOpenMobile((prev) => !prev)}
@@ -439,27 +473,90 @@ export default function Home() {
           theme={theme}
           onToggleTheme={handleToggleTheme}
           onOpenIntegrationModal={() => setIsIntegrationModalOpen(true)}
+          currentUser={currentUser}
+          onOpenLoginModal={() => setIsLoginModalOpen(true)}
         />
 
-        {/* Dynamic Workspace View */}
+        {/* Dynamic Workspace View with Smooth View Transitions */}
         <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 space-y-8">
-          {/* View: Overview Workspace (The Signature Ship Readiness Cockpit) */}
-          {activeView === 'overview' && (
-            <OverviewWorkspace
-              analysis={analysis}
-              setupRun={setupRun}
-              receipt={receipt}
-              currentWorkflowStage={currentWorkflowStage}
-              completedStages={completedStages}
-              onSelectWorkflowStage={handleSelectWorkflowStage}
-              onNavigateView={(view) => setActiveView(view)}
-              onOpenApprovalModal={(task) => {
-                setActiveApprovalTask(task);
-                setApprovalModalOpen(true);
-              }}
-              isDemoMode={isDemoMode}
-            />
-          )}
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={activeView}
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -6 }}
+              transition={{ duration: 0.18 }}
+              className="space-y-8"
+            >
+              {/* View: Overview Workspace (Landing Intake or Ship Readiness Cockpit) */}
+              {activeView === 'overview' && (
+                <div className="space-y-6">
+                  {/* Clean Minimalist Tab Switcher */}
+                  <div className="flex items-center justify-between gap-3 pb-2 border-b border-slate-200/80 dark:border-white/[0.08]">
+                    <div className="inline-flex p-1 rounded-2xl bg-slate-200/60 dark:bg-white/[0.04] border border-slate-300/60 dark:border-white/[0.08] shadow-inner">
+                      <button
+                        type="button"
+                        onClick={() => setOverviewTab('landing')}
+                        className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                          overviewTab === 'landing'
+                            ? 'bg-white dark:bg-white/[0.1] text-slate-900 dark:text-white shadow-sm font-bold'
+                            : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
+                        }`}
+                      >
+                        <span>🚀</span>
+                        <span>Landing &amp; Intake</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setOverviewTab('cockpit')}
+                        className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                          overviewTab === 'cockpit'
+                            ? 'bg-white dark:bg-white/[0.1] text-slate-900 dark:text-white shadow-sm font-bold'
+                            : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
+                        }`}
+                      >
+                        <span>🧭</span>
+                        <span>Ship Readiness Cockpit</span>
+                      </button>
+                    </div>
+
+                    <div className="hidden sm:flex items-center gap-2 text-xs font-mono text-slate-500 dark:text-slate-400">
+                      <span>Preset: <strong className="text-slate-800 dark:text-slate-200">{selectedPreset.appName}</strong></span>
+                    </div>
+                  </div>
+
+                  {overviewTab === 'landing' ? (
+                    <AppInput
+                      onAnalyze={async (url, repo) => {
+                        await handleAnalyze(url, repo);
+                        setOverviewTab('cockpit');
+                      }}
+                      isLoading={isAnalyzing}
+                      errorMessage={analysisError}
+                      onSelectPreset={(p) => {
+                        handleSelectPreset(p);
+                      }}
+                      currentAppUrl={analysis.targetApp.url}
+                      currentRepoUrl={analysis.targetApp.repoUrl || ''}
+                    />
+                  ) : (
+                    <OverviewWorkspace
+                      analysis={analysis}
+                      setupRun={setupRun}
+                      receipt={receipt}
+                      currentWorkflowStage={currentWorkflowStage}
+                      completedStages={completedStages}
+                      onSelectWorkflowStage={handleSelectWorkflowStage}
+                      onNavigateView={(view) => setActiveView(view)}
+                      onOpenApprovalModal={(task) => {
+                        setActiveApprovalTask(task);
+                        setApprovalModalOpen(true);
+                      }}
+                      isDemoMode={isDemoMode}
+                    />
+                  )}
+                </div>
+              )}
 
           {/* View: App Map & Architecture Intake */}
           {activeView === 'app-map' && (
@@ -597,17 +694,19 @@ export default function Home() {
               onToggleTheme={handleToggleTheme}
             />
           )}
+            </motion.div>
+          </AnimatePresence>
         </main>
 
         {/* Global Footer (Hidden when printing receipt) */}
-        <footer className="no-print border-t border-slate-200 bg-white dark:border-slate-800/80 dark:bg-slate-950/80 py-5 text-center text-xs text-slate-500 font-mono transition-colors">
+        <footer className="no-print border-t border-slate-200/80 dark:border-white/[0.08] bg-white/70 dark:bg-[#06080F]/70 backdrop-blur-md py-4 text-center text-xs text-slate-500 font-mono transition-colors">
           <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
             <div className="flex items-center gap-2">
-              <span className="h-2 w-2 rounded-full bg-cyan-500 dark:bg-cyan-400" />
-              <span className="text-slate-800 dark:text-slate-300 font-sans font-semibold">VibePilot 2.0</span>
-              <span>• “AI writes the app. VibePilot gets it ready to ship.”</span>
+              <span className="h-2 w-2 rounded-full bg-cyan-400" />
+              <span className="text-slate-800 dark:text-slate-200 font-sans font-bold">VibePilot 2.0</span>
+              <span className="text-slate-400">• “AI writes the app. VibePilot gets it ready to ship.”</span>
             </div>
-            <div>IIIT Delhi 24-Hour Hackathon • Built with Next.js 16 App Router & Tailwind CSS</div>
+            <div className="text-slate-400">IIIT Delhi Hackathon Edition • Production Readiness Engine</div>
           </div>
         </footer>
       </div>
@@ -628,6 +727,15 @@ export default function Home() {
         onClose={() => setIsIntegrationModalOpen(false)}
         isDemoMode={isDemoMode}
         onToggleDemoMode={handleToggleDemoMode}
+      />
+
+      {/* Developer User Login & Profile Modal */}
+      <UserLoginModal
+        isOpen={isLoginModalOpen}
+        onClose={() => setIsLoginModalOpen(false)}
+        currentUser={currentUser}
+        onLogin={(user) => setCurrentUser(user)}
+        onLogout={() => setCurrentUser(null)}
       />
     </div>
   );
